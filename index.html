@@ -2973,20 +2973,18 @@ if (typeof module !== 'undefined' && module.exports) module.exports = AviationEn
     extCam.lookAt(lookPos);
   }
 
+  const _ckQ = new THREE.Quaternion(), _ckFix = new THREE.Quaternion(), _ckE = new THREE.Euler(), _ckV = new THREE.Vector3();
+  if (_ckFix.setFromAxisAngle) _ckFix.setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2); // la cámara mira a -Z; el morro del avión es +X local
   function placeCockpit(t) {
     const p = xyz(t);
-    const cpsi = Math.cos(t.state.psi), spsi = Math.sin(t.state.psi);
-    const cth = Math.cos(t.state.theta), sth = Math.sin(t.state.theta);
-    /* Ojo del piloto: un poco atrás de la nariz, sobre el eje. */
-    const fx = spsi * cth, fy = sth, fz = -cpsi * cth;
-    cockpitCam.position.set(p.x + fx * 1.15, p.y + 0.62 + fy * 0.2, p.z + fz * 1.15);
-    cockpitCam.up.set(0, 1, 0);
-    cockpitCam.lookAt(
-      p.x + fx * 80,
-      p.y + 0.4 + t.state.theta * 40,
-      p.z + fz * 80
-    );
-    cockpitCam.rotation.z = t.state.phi;
+    // Cámara anclada al CUERPO del avión (misma orientación que usa la vista exterior): si el avión se invierte o pasa por la
+    // vertical en un looping, la cabina se invierte con él. Antes se calculaba con rumbo+cabeceo y el "arriba" fijo del mundo,
+    // y el alabeo se añadía aparte, por eso no coincidía con la exterior en vuelo invertido.
+    _ckE.set(-t.state.theta, -t.state.psi + Math.PI / 2, t.state.phi, 'YXZ');
+    _ckQ.setFromEuler(_ckE);
+    _ckV.set(1.15, 0.62, 0).applyQuaternion(_ckQ); // ojo del piloto: delante y arriba, en ejes del avión
+    cockpitCam.position.set(p.x + _ckV.x, p.y + _ckV.y, p.z + _ckV.z);
+    cockpitCam.quaternion.copy(_ckQ).multiply(_ckFix);
     const buf = (t.buffet != null ? t.buffet : ac.buffet) || 0;
     const gust = ac.turbulence || 0;
     const shake = buf * 0.055 + gust * 0.018;
