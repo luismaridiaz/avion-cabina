@@ -15,12 +15,23 @@
       box.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:999999;background:#3a0d0d;color:#ffdede;font:11px/1.4 ui-monospace,Consolas,monospace;padding:8px;max-height:45vh;overflow:auto;white-space:pre-wrap;border-bottom:3px solid #ef5350';
       document.documentElement.appendChild(box);
     }
+    if (!box.__x) {
+      box.__x = 1;
+      var cb = document.createElement('div');
+      cb.textContent = '✕ cerrar (toca aquí)';
+      cb.style.cssText = 'position:sticky;top:0;text-align:right;color:#ffb4b4;font-weight:bold;padding:2px 0 6px;cursor:pointer';
+      cb.onclick = function () { box.style.display = 'none'; };
+      box.appendChild(cb);
+    }
+    box.style.display = 'block';
     var line = document.createElement('div');
     line.style.cssText = 'margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid #6b1d1d';
     line.textContent = msg;
     box.appendChild(line);
   }
   window.addEventListener('error', function (e) {
+    // Error opaco de un script externo (CDN/extensión): sin información útil, no molesta.
+    if (e.message === 'Script error.' && !e.lineno && !e.error) return;
     var msg = (e.error && e.error.stack) ? e.error.stack : (e.message + ' — ' + e.filename + ':' + e.lineno + ':' + e.colno);
     show('ERROR: ' + msg);
   });
@@ -31,11 +42,11 @@
   window.__showErr = show;
 })();
 </script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" crossorigin="anonymous"></script>
 <script>if (typeof THREE === 'undefined') window.__showErr('Three.js NO cargó desde cdnjs.cloudflare.com (revisa conexión/bloqueo de red).');</script>
-<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" crossorigin="anonymous"></script>
 <script>if (typeof maplibregl === 'undefined') window.__showErr('maplibre-gl NO cargó desde unpkg.com (revisa conexión/bloqueo de red). El resto de la app debería seguir funcionando.');</script>
-<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" crossorigin="anonymous">
 <style>
 :root{--bg:#0a0e1a;--panel:#141c2b;--panel2:#1a2438;--ink:#e8edf5;--ink2:#7a8aa8;--accent:#4fc3f7;--warn:#ef5350;--ok:#66bb6a;--bd:#2a3a55;--mono:ui-monospace,Consolas,monospace}
 *{box-sizing:border-box;margin:0}
@@ -216,6 +227,11 @@ input[type=range]{width:100%;height:4px;-webkit-appearance:none;background:var(-
         <button id="regionModeToggle">Modo: aeródromo aislado</button>
       </div>
       <p id="regionStatus" style="color:var(--ink2);font-size:11px;margin:0 0 8px;display:none">Modo región desactivado.</p>
+      <div class="row" id="destRow" style="display:none">
+        <select id="destSel" style="flex:1;min-width:0;padding:8px;border-radius:8px;background:#16202e;color:#dfe6f0;border:1px solid #2a3a50"></select>
+        <button id="btnToDest">Aprox. al destino</button>
+      </div>
+      <p id="destInfo" style="color:var(--ink2);font-size:11px;margin:0 0 8px;display:none"></p>
       <div class="row">
         <button id="tp-c172" class="on">C172</button>
         <button id="tp-pa28">ARROW</button>
@@ -610,6 +626,7 @@ const RegionTerrain = (() => {
   const pending = new Set(); // mosaicos en proceso de carga, evita pedirlos dos veces
   let active = false;
   let lastKnownElev = 0;
+  let runwaySource = '';
 
   function loadManifest() {
     if (manifest) return Promise.resolve(manifest);
@@ -645,11 +662,124 @@ const RegionTerrain = (() => {
     return { lat, lon };
   }
 
+  // ---------- Pistas reales ----------
+  // Valores de RESPALDO (estimados: rumbo verdadero aprox., longitud publicada, y para León el
+  // centro desplazado respecto al punto de referencia, medido sobre la imagen satelital). Al
+  // activar el modo región el navegador pide a OpenStreetMap (Overpass) la geometría real de cada
+  // pista y la guarda en localStorage; si no hay red se usan estos valores.
+  const RUNWAY_FALLBACK = {
+    LEAS: { hdg: 289, len: 2300, des: '29', off: [0, 0] },
+    LELN: { hdg: 227, len: 3000, des: '23', off: [320, 390] },
+    LEXJ: { hdg: 290, len: 2800, des: '29', off: [0, 0] },
+    LEBB: { hdg: 298, len: 2600, des: '30', off: [0, 0] },
+    LEST: { hdg: 168, len: 3240, des: '17', off: [0, 0] }
+  };
+  const rwData = {}; // icao -> { lat, lon, hdg, len, wid, des, source }
+  function initRunwayFallback() {
+    for (const k in REGION_AIRPORTS) {
+      if (rwData[k]) continue;
+      const ap = REGION_AIRPORTS[k], f = RUNWAY_FALLBACK[k];
+      rwData[k] = { lat: ap.lat + f.off[0] / 111320, lon: ap.lon + f.off[1] / (111320 * Math.cos(ap.lat * Math.PI / 180)),
+                    hdg: f.hdg, len: f.len, wid: 45, des: f.des, source: 'estimada' };
+    }
+  }
+  function _bearing(a, b) {
+    const dn = (b.lat - a.lat) * 111320, de = (b.lon - a.lon) * 111320 * Math.cos(a.lat * Math.PI / 180);
+    return (Math.atan2(de, dn) * 180 / Math.PI + 360) % 360;
+  }
+  function _angDiff(a, b) { return Math.abs(((a - b + 540) % 360) - 180); }
+  function _applyOSM(json) {
+    let n = 0;
+    for (const k in REGION_AIRPORTS) {
+      const ap = REGION_AIRPORTS[k], fb = RUNWAY_FALLBACK[k];
+      let best = null, bestLen = 0;
+      (json.elements || []).forEach(w => {
+        if (!w.geometry || w.geometry.length < 2) return;
+        const a = w.geometry[0], b = w.geometry[w.geometry.length - 1];
+        const mid = { lat: (a.lat + b.lat) / 2, lon: (a.lon + b.lon) / 2 };
+        const dist = Math.hypot((mid.lat - ap.lat) * 111320, (mid.lon - ap.lon) * 111320 * Math.cos(ap.lat * Math.PI / 180));
+        if (dist > 3500) return;
+        const len = Math.hypot((b.lat - a.lat) * 111320, (b.lon - a.lon) * 111320 * Math.cos(ap.lat * Math.PI / 180));
+        if (len > bestLen) { bestLen = len; best = { a, b, mid, tags: w.tags || {} }; }
+      });
+      if (!best || bestLen < 600) continue;
+      const h1 = _bearing(best.a, best.b), h2 = (h1 + 180) % 360;
+      const hdg = _angDiff(h1, fb.hdg) <= _angDiff(h2, fb.hdg) ? h1 : h2; // sentido de aterrizaje preferente
+      let des = fb.des;
+      const ref = String(best.tags.ref || '');
+      if (ref.indexOf('/') > 0) {
+        const nums = ref.split('/').map(x => parseInt(x, 10)).filter(x => !isNaN(x));
+        if (nums.length) { const t = nums.reduce((p, q) => _angDiff(q * 10, hdg) < _angDiff(p * 10, hdg) ? q : p); des = (t < 10 ? '0' : '') + t; }
+      } else { const t = Math.round(hdg / 10) || 36; des = (t < 10 ? '0' : '') + t; }
+      rwData[k] = { lat: best.mid.lat, lon: best.mid.lon, hdg, len: Math.round(bestLen), wid: parseFloat(best.tags.width) || 45, des, source: 'OSM' };
+      n++;
+    }
+    return n;
+  }
+  function _saveRwCache() { try { localStorage.setItem('avion_rwy_v1', JSON.stringify(rwData)); } catch (e) {} }
+  function loadRunways() {
+    initRunwayFallback();
+    try {
+      const c = JSON.parse(localStorage.getItem('avion_rwy_v1') || 'null');
+      if (c) { let any = false; for (const k in c) if (rwData[k] && c[k] && c[k].source === 'OSM') { rwData[k] = c[k]; any = true; } if (any) return Promise.resolve('caché'); }
+    } catch (e) {}
+    const q = '[out:json][timeout:25];(' + Object.keys(REGION_AIRPORTS).map(k => 'way["aeroway"="runway"](around:3500,' + REGION_AIRPORTS[k].lat + ',' + REGION_AIRPORTS[k].lon + ');').join('') + ');out geom;';
+    const mirrors = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.private.coffee/api/interpreter'];
+    const tryOne = (url) => {
+      const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      const to = setTimeout(() => { if (ctl) ctl.abort(); }, 9000);
+      return fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, signal: ctl ? ctl.signal : undefined })
+        .then(r => { clearTimeout(to); if (!r.ok) throw new Error('overpass ' + r.status); return r.json(); });
+    };
+    let chain = Promise.reject(new Error('inicio'));
+    mirrors.forEach(u => { chain = chain.catch(() => tryOne(u)); });
+    return chain.then(json => { const n = _applyOSM(json); if (n) _saveRwCache(); return n ? ('OSM ' + n + '/5') : 'estimadas'; })
+                .catch(() => 'estimadas');
+  }
+  function getRunway(icao) {
+    const d = rwData[icao], ap = REGION_AIRPORTS[icao];
+    if (!d || !ap || refLat === null) return null;
+    const c = latLonToSim(d.lat, d.lon), psi = d.hdg * Math.PI / 180;
+    const ux = Math.cos(psi), uz = Math.sin(psi), half = d.len / 2;
+    const aimDist = Math.min(400, d.len * 0.18); // punto de toma: ~400 m tras el umbral
+    return { icao, name: ap.name, des: d.des, source: d.source, hdg: d.hdg, elev: ap.elev, len: d.len, wid: d.wid, psi,
+      cx: c.x, cz: c.z, thrX: c.x - ux * half, thrZ: c.z - uz * half, endX: c.x + ux * half, endZ: c.z + uz * half,
+      aimX: c.x - ux * (half - aimDist), aimZ: c.z - uz * (half - aimDist) };
+  }
+  // Aplana el terreno alrededor de cada pista a la elevación real del campo (el DEM de ~50 m/px
+  // la deja ondulada y la pista dibujada quedaría enterrada o flotando). Física y malla comparten estos datos.
+  function flattenAirports(meta, H, S) {
+    const latSpan = meta.lat_max - meta.lat_min, lonSpan = meta.lon_max - meta.lon_min;
+    const CORE = 120, OUT = 900;
+    for (const k in rwData) {
+      const d = rwData[k], elev = REGION_AIRPORTS[k].elev;
+      const cosl = Math.cos(d.lat * Math.PI / 180), reach = (d.len / 2 + 200 + OUT);
+      const mLat = reach / 111320, mLon = reach / (111320 * cosl);
+      if (d.lat + mLat < meta.lat_min || d.lat - mLat > meta.lat_max || d.lon + mLon < meta.lon_min || d.lon - mLon > meta.lon_max) continue;
+      const psi = d.hdg * Math.PI / 180, cp = Math.cos(psi), sp = Math.sin(psi), hl = d.len / 2 + 200;
+      for (let row = 0; row < S; row++) {
+        const n = (meta.lat_max - (row / S) * latSpan - d.lat) * 111320;
+        if (Math.abs(n) > reach) continue;
+        for (let col = 0; col < S; col++) {
+          const e = (meta.lon_min + (col / S) * lonSpan - d.lon) * 111320 * cosl;
+          const along = n * cp + e * sp, across = -n * sp + e * cp;
+          const dist = Math.hypot(Math.max(0, Math.abs(along) - hl), across);
+          if (dist >= OUT) continue;
+          let k2 = 1;
+          if (dist > CORE) { const t = (dist - CORE) / (OUT - CORE); k2 = 1 - t * t * (3 - 2 * t); }
+          const i = row * S + col;
+          H[i] = H[i] * (1 - k2) + elev * k2;
+        }
+      }
+    }
+  }
+
   function start(icaoOrigin) {
     const ap = REGION_AIRPORTS[icaoOrigin];
     if (!ap) return Promise.reject(new Error('aeródromo de origen desconocido: ' + icaoOrigin));
-    return loadManifest().then(() => {
+    return loadManifest().then(() => loadRunways()).then((src) => {
       refLat = ap.lat; refLon = ap.lon;
+      runwaySource = src;
       active = true;
       lastKnownElev = ap.elev;
       return true;
@@ -694,6 +824,7 @@ const RegionTerrain = (() => {
     const placesP = fetch(BASE + 'tiles/' + name + '_places.json').then(r => r.ok ? r.json() : []).catch(() => []);
     return Promise.all([heightP, satP, roadsP, placesP]).then(([hImg, sImg, roads, places]) => {
       const { heights, size } = decodeHeightsForTile(hImg, meta);
+      flattenAirports(meta, heights, size);
       const tex = new THREE.Texture(sImg);
       tex.needsUpdate = true;
       tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
@@ -781,7 +912,8 @@ const RegionTerrain = (() => {
 
   return {
     start, stop, ensureNeighborhood, sampleHeight, isSea,
-    latLonToSim, simToLatLon, tileFor, tileByRC,
+    latLonToSim, simToLatLon, tileFor, tileByRC, getRunway,
+    get runwaySource() { return runwaySource; },
     get active() { return active; },
     get lastKnownElev() { return lastKnownElev; },
     get manifest() { return manifest; },
@@ -968,8 +1100,11 @@ const AviationEngine = (() => {
       this.aero = new AerodynamicModel(params.aero || {});
       this.prop = new PropulsionSystem(params.prop || {});
       this.controls = { throttle: 0, elevator: 0, aileron: 0, rudder: 0, flap: 0, brake: 0, gearDown: true };
-      this.ap = { on: false, mode: 'off', Vref: 33, hdot: -1.55, flared: false, landed: false, iv: 0 };
-      this.nav = { rwyX: 0, rwyZ: 0, rwyPsi: 0, rwyLen: 1400, gsAngle: 3 * DEG };
+      const _vref = params.vref ?? 33; // velocidad de aproximación (m/s) por tipo; 33 = C172
+      this.ap = { on: false, mode: 'off', Vref: _vref, hdot: -(_vref * 0.047), flared: false, landed: false, iv: 0 };
+      this.apG = params.apG ?? 1; this.apGq = params.apGq ?? 1; // escalado de ganancias del autopiloto por tipo (a más velocidad, más autoridad de mando)
+      this.cruiseU = params.vcruise ?? 54; this.cruiseThr = params.vcruiseThr ?? 0.55;
+      this.nav = { rwyX: 0, rwyZ: 0, rwyY: 0, rwyPsi: 0, rwyLen: 1400, gsAngle: 3 * DEG, gsTrack: false, dest: false };
       this.wind = { vn: 0, ve: 5.5, vd: 0 }; // ~11 kt cruzado de estribor
       this.turbulence = params.turbulence ?? 0.35;
       this.crashed = false;
@@ -1000,29 +1135,42 @@ const AviationEngine = (() => {
         { name: 'R', xb: -0.55, yb: this.gearH, zb: 1.15, main: true },
         { name: 'N', xb: 1.35, yb: this.gearH * 0.92, zb: 0, main: false }
       ];
-      const K = 52000, C = 4800;
+      const ms = this.mass / 1111; // rigidez/amortiguación del tren calibradas para el C172: se escalan con la masa (el L-39 de 4,7 t apenas comprimía el tren: no frenaba y flotaba)
+      const K = 52000 * ms, C = 4800 * ms;
       let Fx = 0, FyUp = 0, Fz = 0, Mx = 0, My = 0, Mz = 0, Nsum = 0;
       const out = [];
       this.onGround = false;
       const ge = this._ge || 0; // elevación local del terreno bajo el avión
       const agl = this.y - ge;  // altura real sobre el suelo local (no sobre y=0)
       if (!this.controls.gearDown) { this.contactPts = []; this.contactN = 0; return { Fx, FyUp, Fz, Mx, My, Mz }; }
-      for (const g of pts) {
+      // Pasada 1: compresión/normal de cada rueda. Pasada 2: fuerzas. El freno se reparte con la carga MEDIA de las dos ruedas
+      // principales: antes cada rueda frenaba según su propia carga, y con un alabeo mínimo el freno diferencial (artefacto,
+      // no una acción del piloto) metía un momento de guiñada de ~2000 N·m que provocaba "trompos" tras el toque.
+      const Ns = pts.map(g => {
         const sink = this.gearH - agl + g.zb * Math.sin(this.phi) - g.xb * Math.sin(this.theta);
         const comp = Math.max(0, sink);
-        if (comp <= 0 && agl > this.gearH + 0.25) { out.push({ ...g, N: 0, comp: 0 }); continue; }
+        if (comp <= 0 && agl > this.gearH + 0.25) return { N: 0, comp: 0, skip: true };
         let N = K * Math.min(comp, 0.18) - C * Math.min(0, vel.vy);
         N = clamp(N, 0, this.mass * this.g * 0.7);
+        return { N, comp, skip: false };
+      });
+      const Nmain = (Ns[0].N + Ns[1].N) / 2;
+      pts.forEach((g, k) => {
+        const { N, comp, skip } = Ns[k];
+        if (skip) { out.push({ ...g, N: 0, comp: 0 }); return; }
         if (N > 2) this.onGround = true;
-        const muR = 0.025 + (g.main ? 0.40 * this.controls.brake : 0);
-        const fLong = -muR * N * sat(vel.vx);
-        const fLat = -0.35 * N * sat(vel.vz + this.r * g.xb);
+        const muR = 0.025;
+        const fBrake = g.main ? 0.40 * this.controls.brake * Nmain : 0;
+        // Fricción en ejes CUERPO (antes usaba vx/vz del mundo: solo era correcta con rumbo 0; con otro rumbo, p. ej. en una pista
+        // real orientada a 290°, la fricción longitudinal aceleraba al avión en vez de frenarlo).
+        const fLong = -(muR * N + fBrake) * sat(this.u);
+        const fLat = -0.35 * N * sat(this.v + this.r * g.xb);
         Fx += fLong; FyUp += N; Fz += fLat; Nsum += N;
-        Mx += N * g.zb - fLat * g.yb;
+        Mx += -N * g.zb - fLat * g.yb; // una reacción hacia arriba en la rueda IZQUIERDA debe levantar el ala izquierda (alabeo +derecha): signo corregido (antes desestabilizaba el alabeo en tierra)
         My += fLong * 0 - N * g.xb * 0.15;
         Mz += fLat * g.xb - fLong * g.zb;
         out.push({ ...g, N, comp });
-      }
+      });
       this.contactPts = out;
       this.contactN = Nsum;
       if (this.onGround && agl < this.gearH) this.y = ge + this.gearH - Math.min(0.12, Math.max(0, this.gearH - agl));
@@ -1079,11 +1227,40 @@ const AviationEngine = (() => {
       const V = this.airspeed();
       const wv = this._worldVel();
       const ils = this._ils();
-      const eV = this.ap.Vref - V;
+      const eV = this.ap.Vref * (this.nav.dest && this.ap.mode === 'enroute' ? 1.3 : 1) - V;
       this.ap.iv = clamp(this.ap.iv + eV * dt, -10, 10);
       let thr = clamp(0.30 + 0.045 * eV + 0.012 * this.ap.iv, 0.06, 0.82);
       let hdotRef = this.ap.hdot;
       const agl = this.y - (this._ge || 0); // altura sobre el terreno local (== this.y dentro del envelope actual, terreno plano)
+      // --- Navegación por pista real (modo región). nav.gsTrack / nav.dest solo los activa la app en modo región;
+      // con ambos en false el comportamiento es exactamente el de siempre (aeródromo aislado).
+      const nv = this.nav, cps = Math.cos(nv.rwyPsi), sps = Math.sin(nv.rwyPsi);
+      const rx = this.x - nv.rwyX, rz = this.z - nv.rwyZ;
+      const aAlong = rx * cps + rz * sps;       // <0: antes del punto de toma
+      const aAcross = -rx * sps + rz * cps;     // >0: a la derecha del eje
+      const hRel = this.y - (nv.rwyY || 0);
+      let enroute = false, brg = 0;
+      if (nv.gsTrack && aAlong < -40) {
+        const devM = hRel - (Math.tan(nv.gsAngle) * Math.max(40, -aAlong) + 8); // >0: por encima de la senda (+8 m: la senda apunta ~150 m pasado el punto de toma, para no quedarse corto en la redondeada)
+        hdotRef = this.ap.hdot - clamp(0.02 * devM, -1.0, 3.0);
+      }
+      let thetaCmdEnr = null;
+      if (nv.dest) {
+        const glideH = Math.tan(nv.gsAngle) * Math.max(40, -aAlong);
+        const inCone = aAlong < 200 && aAlong > -9000 && Math.abs(aAcross) < Math.max(250, -aAlong * 0.25) && (hRel - glideH) < 300;
+        if (!inCone && !this.ap.flared && !this.onGround) {
+          enroute = true;
+          const iaf = 8000; // punto de interceptación: 8 km antes del punto de toma, sobre el eje
+          const ix = nv.rwyX - cps * iaf, iz = nv.rwyZ - sps * iaf;
+          brg = Math.atan2(iz - this.z, ix - this.x);
+          // Perfil de descenso: ~4° hacia atrás desde la altura de la senda en el IAF (no sube nunca; si llega alto, desciende en órbita)
+          const dIAF = Math.hypot(ix - this.x, iz - this.z);
+          const tgt = (nv.rwyY || 0) + Math.tan(nv.gsAngle) * iaf + 70 + Math.tan(4 * DEG) * dIAF;
+          hdotRef = clamp(0.03 * (tgt - this.y), -4, 0.5);
+          if (agl < 260) hdotRef = Math.max(hdotRef, 1.5); // guarda de terreno
+          thetaCmdEnr = clamp(2.5 * DEG + 0.08 * (hdotRef - wv.vy), -10 * DEG, 8 * DEG);
+        }
+      }
       if (agl < 9) {
         this.ap.flared = true;
         const k = clamp((9 - agl) / 9, 0, 1);
@@ -1096,19 +1273,48 @@ const AviationEngine = (() => {
         thr = 0;
         this.controls.brake = clamp(0.25 + 0.02 * V, 0, 1);
       } else {
-        this.ap.mode = this.ap.flared ? 'flare' : 'approach';
+        this.ap.mode = this.ap.flared ? 'flare' : (enroute ? 'enroute' : 'approach');
         this.controls.brake = 0;
       }
       const eH = hdotRef - wv.vy;
-      this.controls.elevator = clamp(-0.22 * eH - 0.55 * (this.theta - 2.5 * DEG) - 0.35 * this.q, -0.85, 0.85);
+      // Convención del motor: elevator + = morro ABAJO (medido por ensayo). Los términos de actitud/giro tenían el signo
+      // contrario (realimentación positiva): el Autoland original se estrellaba en ~8 s en la prueba.
+      this.controls.elevator = (thetaCmdEnr !== null)
+        ? clamp(this.apG * 5 * (this.theta - thetaCmdEnr) + this.apGq * 2 * this.q, -0.85, 0.85)
+        : clamp(this.apG * (-0.22 * eH + 0.55 * (this.theta - 2.5 * DEG)) + this.apGq * 0.35 * this.q, -0.85, 0.85);
       if (this.ap.flared && !this.ap.landed) this.controls.elevator = clamp(this.controls.elevator - 0.08, -0.9, 0.3);
-      const wrap = wrapPi(this.nav.rwyPsi - this.psi);
-      const track = wrap + clamp(ils.across / 80, -0.35, 0.35);
-      const phiCmd = clamp(0.55 * track, -18 * DEG, 18 * DEG);
+      let wrap, track, phiLim, phiCmd;
+      if (nv.gsTrack && !this.ap.landed) {
+        // Guiado lateral por pista real: rumbo deseado = rumbo de pista menos un ángulo de intercepción proporcional al error
+        // lateral (limitado, y más pequeño cuanto más cerca de la pista); en ruta se vuela directo al punto de interceptación.
+        let psiCmd;
+        if (enroute) psiCmd = brg;
+        else {
+          const L1 = Math.max(300, V * 12);
+          const lim = clamp(0.06 + Math.max(0, -aAlong) / 9000, 0.06, 0.6);
+          psiCmd = nv.rwyPsi - clamp(Math.atan2(aAcross, L1), -lim, lim);
+        }
+        wrap = wrapPi(psiCmd - this.psi);
+        track = wrap;
+        phiLim = (enroute ? 25 : 18) * DEG;
+        phiCmd = clamp((enroute ? 0.9 : 0.7) * track, -phiLim, phiLim);
+      } else {
+        wrap = enroute ? wrapPi(brg - this.psi) : wrapPi(this.nav.rwyPsi - this.psi);
+        track = enroute ? wrap : wrap + clamp(ils.across / 80, -0.35, 0.35);
+        phiLim = (enroute ? 25 : 18) * DEG;
+        phiCmd = this.ap.landed ? 0 : clamp((enroute ? 0.9 : 0.55) * track, -phiLim, phiLim);
+      }
       this.controls.aileron = clamp(1.4 * (phiCmd - this.phi) - 0.45 * this.p, -0.45, 0.45);
-      this.controls.rudder = clamp(0.35 * wrap - 0.12 * this.v - 0.25 * this.r, -0.4, 0.4);
+      if (this.ap.landed) {
+        // Rodadura: mantener el eje de pista con el timón (rudder + = derecha), alas a nivel.
+        this.controls.rudder = clamp(1.2 * (wrapPi(this.nav.rwyPsi - this.psi) + clamp(ils.across / 35, -0.4, 0.4)) - 0.3 * this.r, -0.6, 0.6);
+      } else {
+        this.controls.rudder = clamp((enroute ? 0.08 : 0.35) * wrap - 0.25 * this.r, -0.4, 0.4); // sin término de v: realimentar la derrapada con alta ganancia desestabilizaba la final con viento
+      }
       this.controls.throttle = thr;
       this.controls.flap = agl < 90 ? 0.65 : (agl < 160 ? 0.35 : this.controls.flap);
+      // Navegación a destino: flaps de aproximación ya en la final (a Vref con flaps 0 el avión queda cerca de la pérdida)
+      if (nv.dest && !enroute && !this.ap.landed && agl >= 90) this.controls.flap = Math.max(this.controls.flap, 0.5);
       this.controls.gearDown = agl < 140 || this.onGround;
     }
 
@@ -1138,7 +1344,8 @@ const AviationEngine = (() => {
       const windV = -this.wind.vn * spsW + this.wind.ve * cpsW;
       const al = this.alpha() + gust.w * 0.035;
       const be = this.beta() + gust.v * 0.02 + windV * 0.018;
-      const coef = this.aero.coeffs(al, be, this.p, this.q, this.r, V, de, da, dr, df, !!c.gearDown, this.y);
+      // rudder + = guiñada a la DERECHA (igual que en tierra, UI y autopiloto): el coeficiente aerodinámico usa TE-izquierda positivo, de ahí el signo.
+      const coef = this.aero.coeffs(al, be, this.p, this.q, this.r, V, de, da, -dr, df, !!c.gearDown, this.y);
       const qbar = 0.5 * atm.rho * V * V;
       const L = qbar * this.S * coef.CL;
       const D = qbar * this.S * coef.CD;
@@ -1171,11 +1378,17 @@ const AviationEngine = (() => {
 
       if (this.onGround) {
         axb -= (0.012 * weight / this.mass) * sat(this.u);
+        // Avión parado en tierra sin gas: el viento lo empujaba hacia atrás (rodaba a -2,5 m/s sin nadie tocando nada); fricción estática simple.
+        if (this.controls.throttle < 0.1 && Math.abs(this.u) < 2.5) this.u *= Math.max(0, 1 - 2.5 * dt);
         this.v *= Math.max(0, 1 - 4 * dt);
         this.w *= Math.max(0, 1 - 6 * dt);
-        MxG += -14000 * this.phi - 2000 * this.p;
-        MyG += -9000 * (this.theta - 2 * DEG) - 1600 * this.q;
-        MzG += dr * 700 - 380 * this.r + windV * 180;
+        // Momentos de suelo calibrados para el C172: se escalan con la inercia de cada eje (L-39: Izz 5x mayor).
+        const kx = this.Ixx / 1285, ky = this.Iyy / 1825, kz = this.Izz / 2665;
+        MxG += (-14000 * this.phi - 2000 * this.p) * kx;
+        MyG += (-9000 * (this.theta - 2 * DEG) - 1600 * this.q) * ky;
+        // Ajuste: con 180 el viento cruzado de 11 kt (990 N·m) vencía al timón (máx ~270 N·m) y el avión derrapaba sin control en la carrera;
+        // el efecto de veleta crece con la velocidad (q) y la dirección por rueda de morro/timón tiene más autoridad.
+        MzG += (dr * 1100 - 380 * this.r + windV * 60 * Math.min(1, (this.u * this.u) / 625)) * kz;
         azb = -0.85 * this.w;
       }
 
@@ -1203,7 +1416,10 @@ const AviationEngine = (() => {
       const ge = this._ge || 0;
       if (this.onGround) {
         this.y = ge + this.gearH;
-        if (this.u < 22) { this.phi *= Math.max(0, 1 - 3 * dt); this.p *= Math.max(0, 1 - 3 * dt); }
+        // Con las ruedas en el suelo el avión no puede alabear libremente a ninguna velocidad (antes solo por debajo de 22 m/s: a la
+        // velocidad de toma con viento cruzado el alabeo divergía hasta -30°); a más velocidad se amortigua algo menos.
+        const kd = this.u < 22 ? 3 : 1.8;
+        this.phi *= Math.max(0, 1 - kd * dt); this.p *= Math.max(0, 1 - kd * dt);
       }
       if (this.y < ge + 0.2) this.y = ge + 0.2;
       const agl2 = this.y - ge;
@@ -1328,11 +1544,11 @@ const AviationEngine = (() => {
       this.prop.fuel = this.prop.fuelCap; this.prop.thr = 0;
       if (kind === 'cruise') {
         this.x = 0; this.y = 320; this.z = 0; this.theta = 2 * DEG; this.psi = 0;
-        this.u = 54; this.w = 1.4; this.controls = { throttle: 0.55, elevator: 0, aileron: 0, rudder: 0, flap: 0, brake: 0, gearDown: false };
+        this.u = this.cruiseU; this.w = 1.4; this.controls = { throttle: this.cruiseThr, elevator: 0, aileron: 0, rudder: 0, flap: 0, brake: 0, gearDown: false };
         this.onGround = false;
       } else if (kind === 'flare') {
         this.x = -220; this.y = 18; this.z = 0; this.theta = 3 * DEG; this.psi = 0;
-        this.u = 32; this.w = 1.6; this.controls = { throttle: 0.22, elevator: 0.1, aileron: 0, rudder: 0, flap: 0.7, brake: 0, gearDown: true };
+        this.u = this.ap.Vref - 1; this.w = 1.6; this.controls = { throttle: 0.22, elevator: 0.1, aileron: 0, rudder: 0, flap: 0.7, brake: 0, gearDown: true };
         this.onGround = false;
       } else if (kind === 'ground') {
         this.x = -200; this.y = this.gearH; this.z = 0; this.theta = 2 * DEG; this.psi = 0;
@@ -1340,7 +1556,7 @@ const AviationEngine = (() => {
         this.onGround = true;
       } else {
         this.x = -900; this.y = 48; this.z = 0; this.theta = 2 * DEG; this.psi = 0;
-        this.u = 36; this.w = 1.2; this.controls = { throttle: 0.34, elevator: 0.05, aileron: 0, rudder: 0, flap: 0.55, brake: 0, gearDown: true };
+        this.u = this.ap.Vref + 3; this.w = 1.2; this.controls = { throttle: 0.34, elevator: 0.05, aileron: 0, rudder: 0, flap: 0.55, brake: 0, gearDown: true };
         this.onGround = false;
       }
       this.last = null;
@@ -1365,7 +1581,7 @@ const AviationEngine = (() => {
     // (aterrizaje) 40 KIAS, Vne 163 KIAS. Motor 160 hp (119 kW) — coincide con
     // lo que ya había puesto, así que se mantiene. CLmax calibrado a Vs1 real
     // a MTOW ≈ 1.80 (factor 1.527 sobre la curva base).
-    c172: { typeId: 'c172', typeName: 'Cessna 172R (real)', mass: 1111, S: 16.2, b: 11.0, cBar: 1.493, Ixx: 1285, Iyy: 1825, Izz: 2665, gearH: 1.12, Vne: 163 * KT,
+    c172: { typeId: 'c172', typeName: 'Cessna 172R (real)', vref: 33, mass: 1111, S: 16.2, b: 11.0, cBar: 1.493, Ixx: 1285, Iyy: 1825, Izz: 2665, gearH: 1.12, Vne: 163 * KT,
       aero: { clTab: scaleCL(1.527), CD0: 0.027, kInduced: 0.0553 }, // CD0 y e=0.77 de fuente académica/túnel de viento; kInduced implícito coincide con el que ya había
       prop: { Tstatic: 3800, Pmax_kW: 119 } },
     // Piper PA-28R-201 Arrow III real: MTOW 2750 lb (1247 kg), envergadura
@@ -1375,7 +1591,7 @@ const AviationEngine = (() => {
     // IO-360-C1C6, 200 hp (149 kW). CD0 más bajo que el C172: tren
     // retráctil + fuselaje más limpio (coherente con que en la realidad
     // crucera notablemente más rápido que un C172 con potencia similar).
-    pa28: { typeId: 'pa28', typeName: 'Piper PA-28R-201 Arrow III (real)', mass: 1247, S: 15.79, b: 10.82, cBar: 1.459, Ixx: 1327, Iyy: 1849, Izz: 2750, gearH: 1.05, Vne: 183 * KT,
+    pa28: { typeId: 'pa28', typeName: 'Piper PA-28R-201 Arrow III (real)', vref: 37, vcruise: 62, mass: 1247, S: 15.79, b: 10.82, cBar: 1.459, Ixx: 1327, Iyy: 1849, Izz: 2750, gearH: 1.05, Vne: 183 * KT,
       aero: { clTab: scaleCL(1.124), CD0: 0.025 },
       prop: { Tstatic: 4750, Pmax_kW: 149 } },
     // Aero L-39C Albatros real: peso de instrucción representativo ~4500 kg
@@ -1397,7 +1613,7 @@ const AviationEngine = (() => {
     // de la Universidad Técnica Checa (0.02-0.03 a M0.6) — ese estudio es a
     // un régimen transónico que no coincide del todo con el vuelo subsónico
     // bajo de este simulador.
-    extra: { typeId: 'extra', typeName: 'Aero L-39C Albatros (real, aprox.)', mass: 4700, S: 18.8, b: 9.46, cBar: 1.90, Ixx: 5195, Iyy: 10642, Izz: 13862, gearH: 1.35, Vne: 491 * KT,
+    extra: { typeId: 'extra', typeName: 'Aero L-39C Albatros (real, aprox.)', vref: 56, vcruise: 100, vcruiseThr: 0.8, apG: 0.4, apGq: 2, mass: 4700, S: 18.8, b: 9.46, cBar: 1.90, Ixx: 5195, Iyy: 10642, Izz: 13862, gearH: 1.35, Vne: 491 * KT,
       aero: { clTab: scaleCL(1.583), CD0: 0.025 },
       prop: { jet: true, Tstatic: 16800, tsfc: 1.4e-5, idleFrac: 0.62, fuel: 350, fuelCap: 350 } }
   };
@@ -1426,6 +1642,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = AviationEn
 (() => {
   let mlMap = null, mlMarker = null, mlReady = false, mlLastUpdate = 0, mlMarkerShown = false; // declarado aquí arriba: resize() lo usa más abajo antes de que la sección MapLibre (mucho más adelante en el archivo) llegara a declararlo — eso reventaba TODO el script al arrancar
   let regionLastUpdate = 0;
+  let destLastUpdate = 0;
   const st = document.getElementById('apStatus');
   if (typeof THREE === 'undefined') { st.textContent = 'Sin Three.js (CDN)'; st.classList.add('show'); return; }
   if (typeof AviationEngine === 'undefined') { st.textContent = 'Sin motor'; st.classList.add('show'); return; }
@@ -1482,6 +1699,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = AviationEn
     );
     ground.rotation.x = -Math.PI / 2;
     s.add(ground);
+    _groundRefs.push(ground);
     const rw = new THREE.Mesh(
       new THREE.PlaneGeometry(30, 1800),
       new THREE.MeshLambertMaterial({ map: rwyTex })
@@ -1489,19 +1707,28 @@ if (typeof module !== 'undefined' && module.exports) module.exports = AviationEn
     rw.rotation.x = -Math.PI / 2;
     rw.position.y = 0.04;
     s.add(rw);
+    _groundRefs.push(rw);
     // Relieve procedural en el fondo (TerrainSystem). Es puramente aditivo:
     // dentro del radio seguro (SAFE_R) el terreno es plano y queda oculto bajo
     // el "ground" texturizado de arriba; más allá aparecen colinas/montañas.
     // No modifica nada de lo que ya existía en la pista ni en el entorno cercano.
-    s.add(new THREE.Mesh(getTerrainGeometry(mobile), new THREE.MeshLambertMaterial({ vertexColors: true })));
-    _terrainMeshRefs.push(s.children[s.children.length - 1]);
+    // MARCO DE EJES: el motor usa x=norte(rumbo 0), z=este; Three recibe (X=z, Z=-x) (ver xyz()).
+    // Toda la geometría del terreno se construye en el marco del motor y se gira +90° sobre Y
+    // (X'=Z, Z'=-X), así malla, carreteras, etiquetas y física comparten exactamente el mismo mapa.
+    const terrMesh = new THREE.Mesh(getTerrainGeometry(mobile), new THREE.MeshLambertMaterial({ vertexColors: true }));
+    terrMesh.rotation.y = Math.PI / 2;
+    s.add(terrMesh);
+    _terrainMeshRefs.push(terrMesh);
     const roadGroup = new THREE.Group();
+    roadGroup.rotation.y = Math.PI / 2;
     s.add(roadGroup);
     _roadGroupRefs.push(roadGroup);
     const placeGroup = new THREE.Group();
+    placeGroup.rotation.y = Math.PI / 2;
     s.add(placeGroup);
     _placeGroupRefs.push(placeGroup);
     const regionGroup = new THREE.Group();
+    regionGroup.rotation.y = Math.PI / 2;
     s.add(regionGroup);
     _regionGroupRefs.push(regionGroup);
     return s;
@@ -1511,6 +1738,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = AviationEn
   let _terrainMeshRefs = [];
   const _fogRefs = [];
   const _regionGroupRefs = [];
+  const _groundRefs = [];
   const FOG_FAR_PROCEDURAL = 1800;
   const FOG_FAR_REAL = 32000; // niebla mucho más lejana para que se vean costa/picos reales
   function getTerrainGeometry(mobile, forceRebuild) {
@@ -1679,7 +1907,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = AviationEn
     const centerLon = (meta.lon_min + meta.lon_max) / 2;
     const center = RegionTerrain.latLonToSim(centerLat, centerLon);
 
-    const segs = 24;
+    const segs = (window.innerWidth < 900) ? 64 : 96; // ~200-300 m entre vértices (antes 24 = ~830 m: no representaba pistas ni valles)
     const geo = new THREE.PlaneGeometry(widthNS, widthEW, segs, segs);
     const pos = geo.attributes.position;
     const uv = geo.attributes.uv;
@@ -2194,9 +2422,39 @@ if (typeof module !== 'undefined' && module.exports) module.exports = AviationEn
     $('modeAuto').classList.toggle('on', mode === 'auto');
     $('apStatus').classList.toggle('show', mode === 'auto');
   }
+  // Reinicia el avión; en modo región lo coloca sobre la pista real del aeródromo base (rumbo, posición y altitud reales).
+  let regionBase = null;   // aeródromo cuya pista usan los escenarios (el de origen)
+  let regionDest = null;   // aeródromo de destino elegido
+  const NAV_DEFAULT = () => ({ rwyX: 0, rwyZ: 0, rwyY: 0, rwyPsi: 0, rwyLen: 1400, gsAngle: 3 * Math.PI / 180, gsTrack: false, dest: false });
+  function setNavTo(icao, isDest) {
+    const rw = RegionTerrain.getRunway(icao);
+    if (!rw) return null;
+    ac.nav = { rwyX: rw.aimX, rwyZ: rw.aimZ, rwyY: rw.elev, rwyPsi: rw.psi, rwyLen: rw.len, gsAngle: 3 * Math.PI / 180, gsTrack: true, dest: !!isDest };
+    return rw;
+  }
+  const wrapPiApp = a => Math.atan2(Math.sin(a), Math.cos(a));
+  function placeAtRunway(rw, opts) {
+    opts = opts || {};
+    const c = Math.cos(rw.psi), s2 = Math.sin(rw.psi);
+    const along = (opts.along !== undefined) ? opts.along : ac.x; // el reset deja x = distancia al punto de toma (0)
+    const across = ac.z;
+    ac.x = rw.aimX + along * c - across * s2;
+    ac.z = rw.aimZ + along * s2 + across * c;
+    ac.psi = wrapPiApp(ac.psi + rw.psi);
+    ac.y = (opts.alt !== undefined) ? (rw.elev + opts.alt) : (ac.y + rw.elev);
+  }
+  function resetAc(kind) {
+    ac.reset(kind);
+    if (RegionTerrain.active && regionBase) {
+      const rw = setNavTo(regionBase, false);
+      if (rw) placeAtRunway(rw);
+    } else {
+      ac.nav = NAV_DEFAULT();
+    }
+  }
   function scene(kind, btn) {
     currentScene = kind;
-    ac.reset(kind);
+    resetAc(kind);
     ['scGround','scApproach','scCruise','scFlare'].forEach(id => $(id).classList.toggle('on', id === btn));
     if (mode === 'auto') ac.enableAutoland();
     else ac.disableAutopilot();
@@ -2247,7 +2505,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = AviationEn
         $('terrStatus').textContent = 'Relieve real cargado: ' + entry.meta.name + ' — ' + bits.join(', ') + '.';
       });
     }).catch(err => {
-      $('terrStatus').textContent = 'No se pudo cargar el relieve real (¿sirviendo por file://? usa un servidor/Netlify). Terreno procedural activo.';
+      const why = (err && err.message) ? err.message : String(err);
+      $('terrStatus').textContent = 'No se pudo cargar el relieve real [' + why + '] en ' + location.origin + location.pathname.replace(/[^/]*$/, '') + 'terrain/ . Terreno procedural activo.';
     });
   }
   $('terrGeneric').onclick = () => selectTerrain(null, 'terrGeneric');
@@ -2282,35 +2541,137 @@ if (typeof module !== 'undefined' && module.exports) module.exports = AviationEn
     Array.from(_regionTileObjs.keys()).forEach(removeRegionTileFromScenes);
   }
   let _regionUpdateBusy = false;
-  function updateRegionWorld() {
-    if (!RegionTerrain.active || _regionUpdateBusy) return;
-    _regionUpdateBusy = true;
-    RegionTerrain.ensureNeighborhood(ac.x, ac.z, 1).then(({ loaded, removed }) => {
+  function loadRegionAround(x, z) {
+    return RegionTerrain.ensureNeighborhood(x, z, 1).then(({ loaded, removed }) => {
       removed.forEach(entry => removeRegionTileFromScenes(entry.row + '_' + entry.col));
       loaded.forEach(entry => {
         const key = entry.row + '_' + entry.col;
         if (_regionTileObjs.has(key)) return;
         addRegionTileToScenes(key, buildRegionTileMeshes(entry));
       });
-      _regionUpdateBusy = false;
-      const n = _regionTileObjs.size;
-      $('regionStatus').textContent = 'Modo región activo — ' + n + ' mosaico(s) cargado(s) alrededor del avión.';
-    }).catch(e => { console.error('updateRegionWorld:', e); _regionUpdateBusy = false; });
+      $('regionStatus').textContent = 'Modo región activo — ' + _regionTileObjs.size + ' mosaico(s) cargado(s) alrededor del avión.' +
+        (RegionTerrain.runwaySource ? ' Pistas: ' + RegionTerrain.runwaySource + '.' : '');
+    });
   }
+  function updateRegionWorld() {
+    if (!RegionTerrain.active || _regionUpdateBusy) return;
+    _regionUpdateBusy = true;
+    loadRegionAround(ac.x, ac.z).then(() => { _regionUpdateBusy = false; })
+      .catch(e => { console.error('updateRegionWorld:', e); _regionUpdateBusy = false; });
+  }
+
+  // ----- Pistas dibujadas (las 5, a su altitud y rumbo reales) -----
+  function makeRunwayTexture(rw) {
+    const W = 2048, H = 128;
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const x = c.getContext('2d');
+    x.fillStyle = '#3b3b42'; x.fillRect(0, 0, W, H);
+    x.fillStyle = '#ececec';
+    x.fillRect(0, 4, W, 3); x.fillRect(0, H - 7, W, 3);
+    for (let i = 300; i < W - 300; i += 72) x.fillRect(i, H / 2 - 2, 40, 4);
+    for (let i = 0; i < 8; i++) { const y = 16 + i * (H - 32) / 7 - 3; x.fillRect(16, y, 80, 6); x.fillRect(W - 96, y, 80, 6); }
+    const n = parseInt(rw.des, 10) || 0, r = ((n + 18) % 36) || 36;
+    const desB = (r < 10 ? '0' : '') + r;
+    x.fillStyle = '#ffffff'; x.font = 'bold 66px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.save(); x.translate(190, H / 2); x.rotate(Math.PI / 2); x.fillText(rw.des, 0, 0); x.restore();
+    x.save(); x.translate(W - 190, H / 2); x.rotate(-Math.PI / 2); x.fillText(desB, 0, 0); x.restore();
+    const t = new THREE.CanvasTexture(c);
+    t.anisotropy = 4;
+    return t;
+  }
+  function clearRegionRunways() {
+    _regionGroupRefs.forEach(g => {
+      g.children.filter(c => c.userData.rwy).forEach(c => g.remove(c));
+    });
+  }
+  function addRegionRunways() {
+    clearRegionRunways();
+    Object.keys(REGION_AIRPORTS).forEach(icao => {
+      const rw = RegionTerrain.getRunway(icao);
+      if (!rw) return;
+      const geo = new THREE.PlaneGeometry(rw.len, rw.wid);
+      geo.rotateX(-Math.PI / 2);
+      const mat = new THREE.MeshLambertMaterial({ map: makeRunwayTexture(rw), polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+      const m = new THREE.Mesh(geo, mat);
+      m.rotation.y = -rw.psi; // eje largo local X -> dirección (cos psi, sin psi) del marco del motor
+      m.position.set(rw.cx, rw.elev + 0.4, rw.cz);
+      m.userData.rwy = icao;
+      _regionGroupRefs.forEach(g => g.add(m.clone()));
+    });
+  }
+
+  // ----- Destino -----
+  function updateDestInfo() {
+    const el = $('destInfo');
+    if (!RegionTerrain.active) return;
+    if (!regionDest) { el.textContent = 'Sin destino: elige uno para ver rumbo y distancia.'; return; }
+    const rw = RegionTerrain.getRunway(regionDest);
+    if (!rw) return;
+    const dx = rw.aimX - ac.x, dz = rw.aimZ - ac.z;
+    const dist = Math.hypot(dx, dz);
+    const brg = (Math.atan2(dz, dx) * 180 / Math.PI + 360) % 360;
+    const V = Math.max(10, ac.airspeed());
+    const eta = Math.round(dist / V / 60);
+    let txt = '→ ' + rw.icao + ' ' + rw.name + ' · pista ' + rw.des + ' (' + rw.len + ' m, ' + rw.source + ') · ' + (dist / 1000).toFixed(1) + ' km · rumbo ' + Math.round(brg) + '° · ETA ' + eta + ' min · campo ' + rw.elev + ' m';
+    if (mode === 'auto' && ac.nav && ac.nav.dest) txt += ' · AUTOLAND ' + (ac.ap.mode === 'enroute' ? 'en ruta' : (ac.ap.mode || ''));
+    el.textContent = txt;
+  }
+  function toDestApproach() {
+    if (!RegionTerrain.active || !regionDest) { $('destInfo').textContent = 'Elige primero un destino.'; return; }
+    const rw = RegionTerrain.getRunway(regionDest);
+    if (!rw) return;
+    const L = 7000; // 7 km de final
+    const px = rw.aimX - Math.cos(rw.psi) * L, pz = rw.aimZ - Math.sin(rw.psi) * L;
+    _regionUpdateBusy = true; // evita que el refresco normal pelee con esta carga
+    $('destInfo').textContent = 'Cargando mosaicos de ' + rw.name + '…';
+    loadRegionAround(px, pz).catch(e => console.error('toDestApproach:', e)).then(() => {
+      _regionUpdateBusy = false;
+      mode = 'auto'; currentScene = 'approach';
+      ['scGround','scApproach','scCruise','scFlare'].forEach(id => $(id).classList.toggle('on', id === 'scApproach'));
+      ac.reset('approach');
+      setNavTo(regionDest, true);
+      const alt = Math.max(L * Math.tan(3 * Math.PI / 180), TerrainSystem.groundElevation(px, pz) - rw.elev + 250);
+      placeAtRunway(rw, { along: -L, alt });
+      ac.enableAutoland();
+      setMode(); syncSliders(); updateDestInfo();
+    });
+  }
+  $('btnToDest').onclick = toDestApproach;
+  $('destSel').onchange = () => { regionDest = $('destSel').value || null; updateDestInfo(); };
+  function fillDestSelect(origin) {
+    const sel = $('destSel');
+    sel.innerHTML = '<option value="">Destino…</option>' +
+      Object.keys(REGION_AIRPORTS).filter(k => k !== origin).map(k => '<option value="' + k + '">' + k + ' · ' + REGION_AIRPORTS[k].name + '</option>').join('');
+    regionDest = null;
+  }
+
   function selectRegionStart(icao) {
     const ap = REGION_AIRPORTS[icao];
     if (!ap) return;
     RealTerrain.clear();
     if (window.refreshTerrainVisual) window.refreshTerrainVisual();
     setTerrainBtn(null);
+    RegionTerrain.stop();       // el origen (0,0) cambia: los mosaicos antiguos quedarían mal colocados
+    clearRegionWorld();
+    clearRegionRunways();
     $('terrStatus').textContent = 'Modo región: origen ' + ap.name + '.';
     $('regionStatus').style.display = 'block';
-    $('regionStatus').textContent = 'Cargando mosaicos alrededor de ' + ap.name + '…';
+    $('regionStatus').textContent = 'Cargando pistas y mosaicos alrededor de ' + ap.name + '…';
+    _regionUpdateBusy = true;
     RegionTerrain.start(icao).then(() => {
-      ac.reset('approach');
-      ac.x = 0; ac.z = 0; ac.y += ap.elev;
-      updateRegionWorld();
+      const rw = RegionTerrain.getRunway(icao);
+      regionBase = icao;
+      addRegionRunways();
+      try { if (mlMap) mlMap.jumpTo({ center: [REGION_AIRPORTS[icao].lon, REGION_AIRPORTS[icao].lat], zoom: 11 }); } catch (e) {}
+      return loadRegionAround(rw.aimX, rw.aimZ);
+    }).then(() => {
+      _regionUpdateBusy = false;
+      mode = 'manual'; ac.disableAutopilot();
+      scene('ground', 'scGround'); setMode();   // sobre la pista de origen, listo para despegar
+      $('destRow').style.display = 'flex'; $('destInfo').style.display = 'block';
+      fillDestSelect(icao); updateDestInfo();
     }).catch(e => {
+      _regionUpdateBusy = false;
       $('regionStatus').textContent = 'No se pudo activar el modo región: ' + e.message;
     });
   }
@@ -2319,19 +2680,30 @@ if (typeof module !== 'undefined' && module.exports) module.exports = AviationEn
     $('regionModeToggle').textContent = regionMode ? 'Modo: región completa (elige aeródromo de origen arriba)' : 'Modo: aeródromo aislado';
     $('regionModeToggle').classList.toggle('on', regionMode);
     _terrainMeshRefs.forEach(m => { m.visible = !regionMode; }); // evita malla del modo aislado bajo los mosaicos de región
+    _groundRefs.forEach(m => { m.visible = !regionMode; });      // suelo plano y pista de origen del modo aislado (a nivel del mar)
     if (!regionMode) {
       RegionTerrain.stop();
       clearRegionWorld();
+      clearRegionRunways();
+      regionBase = null; regionDest = null;
+      ac.nav = NAV_DEFAULT();
       $('regionStatus').style.display = 'none';
+      $('destRow').style.display = 'none'; $('destInfo').style.display = 'none';
       $('terrStatus').textContent = 'Relieve procedural (sin conexión a datos reales).';
       if (window.refreshTerrainVisual) window.refreshTerrainVisual();
+      scene('approach', 'scApproach');
     } else {
       $('regionStatus').style.display = 'block';
-      $('regionStatus').textContent = 'Elige un aeródromo de origen arriba para empezar.';
+      $('regionStatus').textContent = 'Elige un aeródromo de origen arriba (Asturias, León, Santander, Bilbao, Santiago) para empezar.';
     }
   };
   $('modeManual').onclick = () => { mode = 'manual'; ac.disableAutopilot(); setMode(); };
-  $('modeAuto').onclick = () => { mode = 'auto'; ac.reset('approach'); ac.enableAutoland(); scene('approach', 'scApproach'); setMode(); };
+  $('modeAuto').onclick = () => {
+    if (RegionTerrain.active && regionDest) { // Autoland hacia la pista del destino, sin teletransportar
+      if (setNavTo(regionDest, true)) { mode = 'auto'; ac.enableAutoland(); setMode(); updateDestInfo(); return; }
+    }
+    mode = 'auto'; scene('approach', 'scApproach'); setMode();
+  };
   $('btnGear').onclick = () => {
     ac.gearDown = !ac.gearDown;
     $('btnGear').textContent = ac.gearDown ? 'Tren ↓' : 'Tren ↑';
@@ -2349,7 +2721,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = AviationEn
     typeId = id;
     ac = AviationEngine.create(id);
     ac.setFidelity(fidelity);
-    ac.reset(currentScene);
+    resetAc(currentScene);
     if (mode === 'auto') ac.enableAutoland();
     exteriorScene.remove(planeExt.group);
     planeExt = makePlane(id);
@@ -2774,13 +3146,28 @@ if (typeof module !== 'undefined' && module.exports) module.exports = AviationEn
   }
   function mlUpdateAircraft(t) {
     if (!mlReady || !mlMarker) return;
-    const icao = RealTerrain.active;
-    if (!icao) return;
-    const pos = RealTerrain.simToReal(icao, t.state.x, t.state.z);
-    if (!pos) return;
+    let lat, lon, hdgDeg;
+    if (RegionTerrain.active) {
+      // Modo región: el marco del motor es norte/este verdadero, sin giro: rumbo = psi.
+      const ll = RegionTerrain.simToLatLon(t.state.x, t.state.z);
+      lat = ll.lat; lon = ll.lon; hdgDeg = t.state.psi * 57.29578;
+    } else {
+      const icao = RealTerrain.active;
+      if (!icao) return;
+      const pos = RealTerrain.simToReal(icao, t.state.x, t.state.z);
+      if (!pos) return;
+      lat = pos.lat; lon = pos.lon;
+      // Con el relieve aislado el eje x del motor está girado respecto al norte: el rumbo real sale de dos puntos.
+      const p1 = RealTerrain.simToReal(icao, t.state.x + 100 * Math.cos(t.state.psi), t.state.z + 100 * Math.sin(t.state.psi));
+      hdgDeg = p1 ? Math.atan2((p1.lon - lon) * Math.cos(lat * Math.PI / 180), p1.lat - lat) * 57.29578 : t.state.psi * 57.29578;
+    }
     if (!mlMarkerShown) { mlMarker.addTo(mlMap); mlMarkerShown = true; }
-    mlMarker.setLngLat([pos.lon, pos.lat]);
-    mlMarker.setRotation(t.state.psi * 57.29578);
+    mlMarker.setLngLat([lon, lat]);
+    mlMarker.setRotation(hdgDeg);
+    try { // el mapa sigue al avión cuando se acerca al borde de la vista
+      const pt = mlMap.project([lon, lat]), c = mlMap.getContainer();
+      if (pt.x < c.clientWidth * 0.2 || pt.x > c.clientWidth * 0.8 || pt.y < c.clientHeight * 0.2 || pt.y > c.clientHeight * 0.8) mlMap.easeTo({ center: [lon, lat], duration: 400 });
+    } catch (e) {}
   }
 
   function loop(now) {
@@ -2832,6 +3219,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = AviationEn
     }
     if (!onlyCock) eR.render(exteriorScene, extCam);
     if (now - mlLastUpdate > 300) { mlLastUpdate = now; try { mlUpdateAircraft(t); } catch (e) { console.error('mlUpdateAircraft:', e); } }
+    if (RegionTerrain.active && now - destLastUpdate > 500) { destLastUpdate = now; try { updateDestInfo(); } catch (e) { console.error('updateDestInfo:', e); } }
     if (RegionTerrain.active && now - regionLastUpdate > 2000) { regionLastUpdate = now; try { updateRegionWorld(); } catch (e) { console.error('updateRegionWorld:', e); } }
     requestAnimationFrame(loop);
   }
