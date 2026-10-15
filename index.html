@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Simulador — cabina + exterior (v2 · terreno real + mapa)</title>
+<title>Escuela de Vuelo Norte</title>
 <script>
 // Cazador de errores visible en pantalla — para depurar sin acceso a consola/inspector.
 (function () {
@@ -139,6 +139,21 @@ input[type=range]{width:100%;height:4px;-webkit-appearance:none;background:var(-
   .stick-pad{bottom:calc(64px + env(safe-area-inset-bottom))}
   .mapStrip{flex-basis:calc(130px + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom)}
 }
+
+#sixPack{display:none}
+.gauges{position:absolute;left:50%;transform:translateX(-50%);bottom:56px;display:flex;gap:4px;z-index:7;pointer-events:none}
+.gauges .gg{width:54px;text-align:center}
+.gauges canvas{width:54px;height:54px;border-radius:50%;display:block;box-shadow:0 1px 4px rgba(0,0,0,.6)}
+.gauges span{display:block;font:700 7px var(--mono);color:#9fb3cf;margin-top:1px;text-shadow:0 1px 2px #000;white-space:nowrap}
+.hud.night .gauges canvas{box-shadow:0 0 8px rgba(255,160,60,.4)}
+@media(max-width:900px){
+  .gauges{bottom:auto;top:6px;left:4px;right:4px;transform:none;justify-content:center;gap:2px}
+  .gauges .gg{width:calc((100vw - 8px)/8 - 2px);max-width:50px}
+  .gauges canvas{width:100%;height:auto;aspect-ratio:1}
+  .gauges span{font-size:6px}
+  .warn{top:62px}
+  .rollarc{top:24%}
+}
 </style>
 </head>
 <body>
@@ -172,6 +187,7 @@ input[type=range]{width:100%;height:4px;-webkit-appearance:none;background:var(-
         </div>
         <div class="ac"></div>
       </div>
+      <div class="gauges" id="gaugeRow"></div>
       <div class="six" id="sixPack">
         <div class="g"><i id="nIAS"></i><b>IAS</b></div>
         <div class="g"><i id="nALT"></i><b>ALT</b></div>
@@ -202,6 +218,7 @@ input[type=range]{width:100%;height:4px;-webkit-appearance:none;background:var(-
   <div class="right">
     <div class="ext" id="extWrap"><canvas id="exteriorCanvas"></canvas></div>
     <div class="ctl">
+      <p style="color:var(--accent);font:700 10px ui-monospace,Consolas,monospace;letter-spacing:2px;margin:0 0 2px">ESCUELA DE VUELO NORTE</p>
       <p id="typeBadge2" style="color:#fff;font:700 14px ui-monospace,Consolas,monospace;margin:0 0 8px">C172 · A</p>
       <div class="views">
         <button id="vwSplit" class="on">Split</button>
@@ -1993,7 +2010,82 @@ if (typeof module !== 'undefined' && module.exports) module.exports = AviationEn
     return tex;
   }
 
+
+  /* ===== Modelos 3D del Arrow y del L-39, tomados de arrow-trainer y l39-trainer =====
+     En esas apps el morro apunta a -Z; aquí es +X, por eso todo va en un grupo girado -90° en Y. */
+  function buildTrainerPlane(kind) {
+    const g = new THREE.Group(), body = new THREE.Group();
+    g.add(body);
+    const wrap = new THREE.Group(); wrap.rotation.y = -Math.PI / 2; body.add(wrap);
+    const gearG = new THREE.Group(); wrap.add(gearG);
+    const L = c => new THREE.MeshLambertMaterial({ color: c });
+    const tyre = L(0x14181d);
+    function mkLeg(x, y, z, len, legMat, w) {
+      const gr = new THREE.Group(); gr.position.set(x, y, z);
+      const l = new THREE.Mesh(new THREE.BoxGeometry(w.leg, len, w.leg), legMat); l.position.y = -len / 2; gr.add(l);
+      const wh = new THREE.Mesh(new THREE.CylinderGeometry(w.r, w.r, w.wd, 12), tyre); wh.rotation.z = Math.PI / 2; wh.position.y = -len; gr.add(wh);
+      gearG.add(gr); return gr;
+    }
+    let prop = new THREE.Group();
+    if (kind === 'pa28') {
+      // Piper Arrow III: ala baja, tren retráctil, hélice de paso constante
+      const white = L(0xeceff3), red = L(0xb3261e), dark = L(0x2a3038), glass = L(0x2e5c86), leg = L(0x9aa2ad);
+      const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); wrap.add(m); return m; };
+      add(new THREE.BoxGeometry(1.1, 1.15, 5.6), white, 0, 0.05, 0.5);
+      add(new THREE.BoxGeometry(1.14, 0.16, 5.62), red, 0, 0.0, 0.5);
+      const nose = add(new THREE.CylinderGeometry(0.52, 0.4, 1.7, 12), white, 0, -0.05, -3.1); nose.rotation.x = Math.PI / 2;
+      add(new THREE.BoxGeometry(1.12, 0.55, 1.9), glass, 0, 0.62, -0.55);
+      add(new THREE.BoxGeometry(0.55, 0.62, 2.6), white, 0, 0.28, 3.9);
+      add(new THREE.BoxGeometry(10.82, 0.16, 1.6), white, 0, -0.5, 0.1);
+      add(new THREE.BoxGeometry(10.84, 0.05, 0.35), red, 0, -0.43, -0.55);
+      add(new THREE.BoxGeometry(3.9, 0.12, 1.05), white, 0, 0.42, 4.75);
+      add(new THREE.BoxGeometry(0.12, 1.45, 1.35), white, 0, 1.05, 4.45);
+      add(new THREE.BoxGeometry(0.14, 0.45, 0.9), red, 0, 1.62, 4.55);
+      const W = { leg: 0.1, r: 0.3, wd: 0.2 };
+      mkLeg(0, -0.3, -2.4, 0.78, leg, W); mkLeg(-1.45, -0.55, 0.25, 0.55, leg, W); mkLeg(1.45, -0.55, 0.25, 0.55, leg, W);
+      const spin = add(new THREE.ConeGeometry(0.2, 0.4, 10), dark, 0, -0.05, -4.15); spin.rotation.x = -Math.PI / 2;
+      wrap.position.set(-0.30, 0.35, 0); // ruedas principales en x=-0.55 (como el motor) y a -gearH del origen
+      prop = new THREE.Group(); // la hélice gira sobre el eje del morro (+X del avión)
+      prop.add(new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.9, 0.12), dark));
+      prop.position.set(4.35 - 0.30, -0.05 + 0.35, 0); body.add(prop);
+    } else {
+      // Aero L-39 Albatros: reactor, cabina en tándem, tomas laterales, depósitos de punta
+      const grey = L(0xc9ced4), olive = L(0x4a6a35), dark = L(0x23282d), glass = L(0x35607f), leg = L(0xa7adb5);
+      const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); wrap.add(m); return m; };
+      const cylZ = (r0, r1, len, mat, x, y, z) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(r1, r0, len, 14), mat); m.rotation.x = Math.PI / 2; m.position.set(x, y, z); wrap.add(m); return m; };
+      cylZ(0.18, 0.62, 2.6, grey, 0, 0.00, -4.6);
+      add(new THREE.BoxGeometry(1.25, 1.15, 4.4), grey, 0, 0.00, -1.0);
+      add(new THREE.BoxGeometry(1.20, 1.00, 3.2), grey, 0, 0.00, 2.4);
+      cylZ(0.62, 0.38, 3.2, grey, 0, 0.05, 5.5);
+      cylZ(0.34, 0.30, 0.5, dark, 0, 0.05, 7.3);
+      add(new THREE.BoxGeometry(1.27, 0.14, 10.0), olive, 0, 0.22, 0.6);
+      add(new THREE.BoxGeometry(0.95, 0.62, 1.35), glass, 0, 0.78, -2.5);
+      add(new THREE.BoxGeometry(0.95, 0.72, 1.45), glass, 0, 0.88, -0.95);
+      add(new THREE.BoxGeometry(1.0, 0.1, 0.12), dark, 0, 0.64, -1.75);
+      add(new THREE.BoxGeometry(0.42, 0.62, 1.7), dark, -0.82, -0.02, 0.35);
+      add(new THREE.BoxGeometry(0.42, 0.62, 1.7), dark, 0.82, -0.02, 0.35);
+      add(new THREE.BoxGeometry(8.5, 0.14, 2.4), grey, 0, -0.22, 0.6);
+      add(new THREE.BoxGeometry(8.5, 0.05, 0.5), olive, 0, -0.14, -0.35);
+      [-1, 1].forEach(sg => {
+        cylZ(0.30, 0.30, 3.0, grey, sg * 4.45, -0.22, 0.7);
+        cylZ(0.30, 0.06, 0.9, grey, sg * 4.45, -0.22, -1.25);
+        cylZ(0.06, 0.30, 0.9, grey, sg * 4.45, -0.22, 2.65);
+        cylZ(0.31, 0.31, 0.4, olive, sg * 4.45, -0.22, 0.7);
+      });
+      add(new THREE.BoxGeometry(0.14, 1.9, 1.9), grey, 0, 1.35, 5.7);
+      add(new THREE.BoxGeometry(0.16, 0.5, 1.0), olive, 0, 2.05, 5.9);
+      add(new THREE.BoxGeometry(3.7, 0.12, 1.3), grey, 0, 0.45, 6.3);
+      const W = { leg: 0.11, r: 0.34, wd: 0.22 };
+      mkLeg(0, -0.45, -3.1, 0.66, leg, W); mkLeg(-1.25, -0.40, 0.9, 0.70, leg, W); mkLeg(1.25, -0.40, 0.9, 0.70, leg, W);
+      wrap.position.set(0.35, 0.10, 0); // ruedas principales en x=-0.55 y a -gearH del origen
+    }
+    return { group: g, prop, gear: gearG };
+  }
   function makePlane(kind) {
+    return (kind === 'pa28' || kind === 'extra') ? buildTrainerPlane(kind) : makePlaneBasic(kind);
+  }
+
+  function makePlaneBasic(kind) {
     const specs = {
       c172: { base: '#f4f6f8', accent: '#1e6fd9', trim: '#0d3d80', span: 11, wingY: 0.42, fuse: 6.2, label: 'EC-172' },
       pa28: { base: '#f4f6f8', accent: '#c9820a', trim: '#5d4037', span: 9.14, wingY: -0.14, fuse: 6.0, label: 'EC-ARR' },
@@ -2098,6 +2190,1203 @@ if (typeof module !== 'undefined' && module.exports) module.exports = AviationEn
     return { group: g, prop, gear };
   }
 
+
+  /* ===== Relojes: cada avión usa los de su app de origen (c172-v2, arrow-trainer, l39-trainer) ===== */
+  const GAUGE_SETS = {
+    c172: (function () {
+      const DEG = Math.PI / 180, RAD = 180 / Math.PI, clamp = (x, a, b) => x < a ? a : (x > b ? b : x);
+      const P = { Vs0: 40, Vs1: 48, Vfe: 85, Vno: 128, Vne: 163 }; // velocidades del velocímetro, de la app de origen
+function clearG(cv){
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,cv.width,cv.height);
+  return { ctx, S:cv.width, R:cv.width/2 };
+}
+function face(ctx,R,inner){
+  const g = ctx.createRadialGradient(-R*0.32,-R*0.34,R*0.08, 0,0,R);
+  g.addColorStop(0, inner||'#1c2836');
+  g.addColorStop(1, '#080d14');
+  ctx.beginPath(); ctx.arc(0,0,R,0,Math.PI*2);
+  ctx.fillStyle = g; ctx.fill();
+  ctx.lineWidth = R*0.055; ctx.strokeStyle = '#46586f'; ctx.stroke();
+  ctx.beginPath(); ctx.arc(0,0,R*0.955,0,Math.PI*2);
+  ctx.lineWidth = R*0.012; ctx.strokeStyle = '#0a1018'; ctx.stroke();
+}
+
+/* --- Velocímetro (kt) --- */
+function gaugeASI(cv, kt){
+  const { ctx, S, R } = clearG(cv);
+  ctx.save(); ctx.translate(R,R);
+  const r = R*0.93;
+  face(ctx, r);
+
+  const VMAX = 180, A0 = -Math.PI*0.75, A1 = Math.PI*0.75;
+  const ang = v => A0 + (v/VMAX)*(A1-A0);
+
+  const arc = (v1,v2,col,rad,w)=>{
+    ctx.beginPath(); ctx.arc(0,0,rad, ang(v1), ang(v2));
+    ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineCap='butt'; ctx.stroke();
+  };
+  arc(P.Vno,P.Vne,'#ffd54f', r*0.845, r*0.055);      // amarillo 128-163
+  arc(P.Vs1,P.Vno,'#3ddc84', r*0.845, r*0.055);      // verde 48-128
+  arc(P.Vs0,P.Vfe,'#f2f5f8', r*0.765, r*0.045);      // blanco 40-85
+  // línea roja
+  ctx.beginPath();
+  ctx.moveTo(Math.cos(ang(P.Vne))*r*0.78, Math.sin(ang(P.Vne))*r*0.78);
+  ctx.lineTo(Math.cos(ang(P.Vne))*r*0.90, Math.sin(ang(P.Vne))*r*0.90);
+  ctx.strokeStyle = '#ff4d4d'; ctx.lineWidth = r*0.028; ctx.stroke();
+
+  ctx.strokeStyle = '#cfe3f5'; ctx.fillStyle = '#dbe9f7';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  for(let v=0; v<=VMAX; v+=10){
+    const a = ang(v), c = Math.cos(a), s = Math.sin(a);
+    const big = v%20===0;
+    ctx.lineWidth = big? r*0.022 : r*0.012;
+    ctx.beginPath();
+    ctx.moveTo(c*r*0.90, s*r*0.90);
+    ctx.lineTo(c*(big? r*0.795 : r*0.85), s*(big? r*0.795 : r*0.85));
+    ctx.stroke();
+    if(big && v%40===0){
+      ctx.font = `bold ${r*0.155}px ui-monospace,monospace`;
+      ctx.fillText(String(v), c*r*0.64, s*r*0.64);
+    }
+  }
+  // aguja
+  ctx.save(); ctx.rotate(ang(clamp(kt,0,VMAX)));
+  ctx.beginPath();
+  ctx.moveTo(r*0.10, 0);
+  ctx.lineTo(-r*0.13,  r*0.035);
+  ctx.lineTo(-r*0.13, -r*0.035);
+  ctx.closePath();
+  ctx.fillStyle = '#f7fafd'; ctx.fill();
+  ctx.strokeStyle='#9fb4d0'; ctx.lineWidth=r*0.012; ctx.stroke();
+  ctx.restore();
+  ctx.beginPath(); ctx.arc(0,0,r*0.085,0,Math.PI*2);
+  ctx.fillStyle='#2c3a4c'; ctx.fill();
+  ctx.strokeStyle='#7f90ad'; ctx.lineWidth=r*0.018; ctx.stroke();
+  ctx.restore();
+}
+
+/* --- Horizonte artificial --- */
+function gaugeATT(cv, pitchRad, rollRad){
+  const { ctx, S, R } = clearG(cv);
+  ctx.save(); ctx.translate(R,R);
+  const r = R*0.93;
+
+  ctx.save();
+  ctx.beginPath(); ctx.arc(0,0,r*0.90,0,Math.PI*2); ctx.clip();
+
+  ctx.rotate(-rollRad);
+  const ppd = r*0.055;                       // píxeles por grado
+  const yOff = pitchRad*RAD*ppd;
+  ctx.translate(0, yOff);
+
+  // cielo
+  ctx.fillStyle = '#2f7fc4';
+  ctx.fillRect(-r*2, -r*2.2, r*4, r*2.2);
+  // tierra
+  ctx.fillStyle = '#7a5230';
+  ctx.fillRect(-r*2, 0, r*4, r*2.2);
+  // línea de horizonte
+  ctx.strokeStyle='#ffffff'; ctx.lineWidth=r*0.022;
+  ctx.beginPath(); ctx.moveTo(-r*2,0); ctx.lineTo(r*2,0); ctx.stroke();
+
+  // líneas de pitch
+  ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.fillStyle='rgba(255,255,255,.9)';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font = `bold ${r*0.11}px ui-monospace,monospace`;
+  for(let p=-60; p<=60; p+=10){
+    if(p===0) continue;
+    const y = -p*ppd;
+    const w = (p%20===0) ? r*0.26 : r*0.14;
+    ctx.lineWidth = r*0.014;
+    ctx.beginPath();
+    ctx.moveTo(-w,y); ctx.lineTo(-w*0.35,y);
+    ctx.moveTo( w*0.35,y); ctx.lineTo( w,y);
+    ctx.stroke();
+    if(p%20===0){
+      ctx.fillText(String(Math.abs(p)), -w*0.55, y);
+      ctx.fillText(String(Math.abs(p)),  w*0.55, y);
+    }
+  }
+  ctx.restore();
+
+  // símbolo de aeronave
+  ctx.strokeStyle='#f0b429'; ctx.lineWidth=r*0.055; ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.moveTo(-r*0.52, 0); ctx.lineTo(-r*0.16, 0);
+  ctx.moveTo( r*0.16, 0); ctx.lineTo( r*0.52, 0);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(0,0,r*0.045,0,Math.PI*2); ctx.fillStyle='#f0b429'; ctx.fill();
+
+  // anillo de banco
+  ctx.strokeStyle='#c8d8ea'; ctx.lineWidth=r*0.012;
+  ctx.beginPath(); ctx.arc(0,0,r*0.88,0,Math.PI*2); ctx.stroke();
+  ctx.save(); ctx.rotate(-rollRad);
+  ctx.fillStyle='#f0b429';
+  ctx.beginPath();
+  ctx.moveTo(0,-r*0.88); ctx.lineTo(-r*0.055,-r*0.76); ctx.lineTo(r*0.055,-r*0.76);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+
+  ctx.restore();
+}
+
+/* --- Altímetro --- */
+function gaugeALT(cv, ft){
+  const { ctx, S, R } = clearG(cv);
+  ctx.save(); ctx.translate(R,R);
+  const r = R*0.93;
+  face(ctx, r);
+
+  ctx.strokeStyle='#cfe3f5'; ctx.fillStyle='#dbe9f7';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  for(let i=0;i<50;i++){
+    const a = (i/50)*Math.PI*2 - Math.PI/2;
+    const big = i%5===0;
+    const c=Math.cos(a), s=Math.sin(a);
+    ctx.lineWidth = big? r*0.026 : r*0.012;
+    ctx.beginPath();
+    ctx.moveTo(c*r*0.88, s*r*0.88);
+    ctx.lineTo(c*(big? r*0.75 : r*0.82), s*(big? r*0.75 : r*0.82));
+    ctx.stroke();
+  }
+  for(let i=0;i<10;i++){
+    const a = (i/10)*Math.PI*2 - Math.PI/2;
+    ctx.font = `bold ${r*0.20}px ui-monospace,monospace`;
+    ctx.fillText(String(i), Math.cos(a)*r*0.58, Math.sin(a)*r*0.58);
+  }
+
+  const pos = ((ft % 10000)+10000)%10000;
+  // aguja larga (cientos)
+  ctx.save();
+  ctx.rotate((pos%1000)/1000*Math.PI*2);
+  ctx.beginPath();
+  ctx.moveTo(r*0.72,0); ctx.lineTo(-r*0.10, r*0.018); ctx.lineTo(-r*0.10,-r*0.018);
+  ctx.closePath(); ctx.fillStyle='#f2f6fa'; ctx.fill(); ctx.restore();
+
+  // aguja corta (millares)
+  ctx.save();
+  ctx.rotate(pos/10000*Math.PI*2);
+  ctx.beginPath();
+  ctx.moveTo(r*0.50,0); ctx.lineTo(-r*0.08, r*0.038); ctx.lineTo(-r*0.08,-r*0.038);
+  ctx.closePath(); ctx.fillStyle='#dfe9f5'; ctx.fill(); ctx.restore();
+
+  // puntero 10.000 ft
+  const tens = Math.floor(Math.max(0,ft)/10000);
+  if(tens>0){
+    ctx.save(); ctx.rotate((tens/10)*Math.PI*2 - Math.PI/2);
+    ctx.beginPath();
+    ctx.moveTo(0,-r*0.62); ctx.lineTo(-r*0.05,-r*0.50); ctx.lineTo(r*0.05,-r*0.50);
+    ctx.closePath(); ctx.fillStyle='#f0b429'; ctx.fill();
+    ctx.restore();
+  }
+  ctx.beginPath(); ctx.arc(0,0,r*0.075,0,Math.PI*2);
+  ctx.fillStyle='#2c3a4c'; ctx.fill();
+  ctx.strokeStyle='#7f90ad'; ctx.lineWidth=r*0.016; ctx.stroke();
+
+  // ventana Kollsman
+  ctx.fillStyle='#0a1220';
+  ctx.fillRect(-r*0.30, r*0.52, r*0.60, r*0.20);
+  ctx.strokeStyle='#4a5a72'; ctx.lineWidth=r*0.014;
+  ctx.strokeRect(-r*0.30, r*0.52, r*0.60, r*0.20);
+  ctx.fillStyle='#8fd0f0';
+  ctx.font=`bold ${r*0.15}px ui-monospace,monospace`;
+  ctx.fillText('29.92', 0, r*0.625);
+
+  ctx.restore();
+}
+
+/* --- Coordinador de viraje --- */
+function gaugeTC(cv, rollRate, slip){
+  const { ctx, S, R } = clearG(cv);
+  ctx.save(); ctx.translate(R,R);
+  const r = R*0.93;
+  face(ctx, r, '#16202c');
+
+  // vista superior: ala que se inclina con la tasa de alabeo
+  const bank = clamp(rollRate*0.9, -1, 1) * 0.55;
+  ctx.save();
+  ctx.translate(0, -r*0.22);
+  ctx.rotate(bank);
+  ctx.fillStyle = '#e6eef7';
+  ctx.fillRect(-r*0.58, -r*0.035, r*1.16, r*0.07);
+  ctx.beginPath(); ctx.arc(0,0,r*0.10,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+
+  // marcas L / R
+  ctx.fillStyle='#cfe3f5'; ctx.font=`bold ${r*0.16}px ui-monospace,monospace`;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('L', -r*0.66, -r*0.22);
+  ctx.fillText('R',  r*0.66, -r*0.22);
+
+  // tubo del inclinómetro
+  const tubeY = r*0.42, tubeW = r*1.15, tubeH = r*0.24;
+  ctx.beginPath();
+  ctx.moveTo(-tubeW/2, tubeY - tubeH*0.6);
+  ctx.quadraticCurveTo(0, tubeY + tubeH*1.1, tubeW/2, tubeY - tubeH*0.6);
+  ctx.lineTo(tubeW/2, tubeY - tubeH*0.25);
+  ctx.quadraticCurveTo(0, tubeY + tubeH*1.5, -tubeW/2, tubeY - tubeH*0.25);
+  ctx.closePath();
+  ctx.fillStyle='#0a1220'; ctx.fill();
+  ctx.strokeStyle='#4a5a72'; ctx.lineWidth=r*0.016; ctx.stroke();
+
+  // bola
+  const bx = clamp(slip,-1,1)*tubeW*0.40;
+  const by = tubeY - tubeH*0.30 + Math.abs(bx/tubeW)*tubeH*0.9;
+  ctx.beginPath(); ctx.arc(bx, by, r*0.085, 0, Math.PI*2);
+  const gr = ctx.createRadialGradient(bx-r*0.03, by-r*0.03, r*0.01, bx, by, r*0.09);
+  gr.addColorStop(0,'#ffffff'); gr.addColorStop(1,'#8f9fb4');
+  ctx.fillStyle = gr; ctx.fill();
+
+  ctx.restore();
+}
+
+/* --- Indicador de rumbo (giroscópico) --- */
+function gaugeHDG(cv, psi){
+  const { ctx, S, R } = clearG(cv);
+  ctx.save(); ctx.translate(R,R);
+  const r = R*0.93;
+  face(ctx, r);
+
+  ctx.save();
+  ctx.rotate(-psi);
+  ctx.strokeStyle='#cfe3f5'; ctx.fillStyle='#dbe9f7';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  for(let d=0; d<360; d+=5){
+    const a = (d-90)*DEG;
+    const c = Math.cos(a), s = Math.sin(a);
+    const big = d%30===0, mid = d%10===0;
+    ctx.lineWidth = big? r*0.028 : (mid? r*0.018 : r*0.010);
+    ctx.beginPath();
+    ctx.moveTo(c*r*0.88, s*r*0.88);
+    ctx.lineTo(c*(big? r*0.74 : (mid? r*0.80 : r*0.84)),
+               s*(big? r*0.74 : (mid? r*0.80 : r*0.84)));
+    ctx.stroke();
+  }
+  const lbl = ['N','3','6','E','12','15','S','21','24','W','30','33'];
+  ctx.font = `bold ${r*0.20}px ui-monospace,monospace`;
+  for(let i=0;i<12;i++){
+    const a = (i*30-90)*DEG;
+    ctx.fillStyle = (i%3===0) ? '#8fd0f0' : '#dbe9f7';
+    ctx.fillText(lbl[i], Math.cos(a)*r*0.55, Math.sin(a)*r*0.55);
+  }
+  ctx.restore();
+
+  // lubber line
+  ctx.fillStyle='#f0b429';
+  ctx.beginPath();
+  ctx.moveTo(0,-r*0.92); ctx.lineTo(-r*0.055,-r*0.74); ctx.lineTo(r*0.055,-r*0.74);
+  ctx.closePath(); ctx.fill();
+
+  // silueta avión
+  ctx.strokeStyle='#e8eef5'; ctx.lineWidth=r*0.030; ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.moveTo(0, r*0.40); ctx.lineTo(0, -r*0.05);
+  ctx.moveTo(-r*0.26, r*0.10); ctx.lineTo(r*0.26, r*0.10);
+  ctx.moveTo(-r*0.12, r*0.34); ctx.lineTo(r*0.12, r*0.34);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/* --- Variómetro --- */
+function gaugeRPM(cv, rpm){
+  const { ctx, S, R } = clearG(cv);
+  ctx.save(); ctx.translate(R,R);
+  const r = R*0.93; face(ctx, r);
+  const MAX = 3000, A0 = -135*DEG, A1 = 135*DEG;
+  const ang = v => A0 + clamp(v/MAX,0,1)*(A1-A0);
+  const arc = (v0,v1,col)=>{ ctx.beginPath(); ctx.arc(0,0,r*0.84,ang(v0)-Math.PI/2,ang(v1)-Math.PI/2); ctx.lineWidth=r*0.07; ctx.strokeStyle=col; ctx.stroke(); };
+  arc(500,2100,'rgba(255,255,255,.35)'); arc(2100,2550,'#3ddc84'); arc(2550,2700,'#ffd54f'); arc(2700,3000,'#ff5c5c');
+  ctx.strokeStyle='#cfe3f5'; ctx.fillStyle='#dbe9f7'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  for(let v=0; v<=MAX; v+=250){
+    const big = v%500===0, a = ang(v)-Math.PI/2, c=Math.cos(a), sn=Math.sin(a);
+    ctx.lineWidth = big ? r*0.024 : r*0.011;
+    ctx.beginPath(); ctx.moveTo(c*r*0.76, sn*r*0.76); ctx.lineTo(c*r*(big?0.62:0.68), sn*r*(big?0.62:0.68)); ctx.stroke();
+    if(big){ ctx.font = `bold ${r*0.15}px ui-monospace,monospace`; ctx.fillText(String(v/100), c*r*0.48, sn*r*0.48); }
+  }
+  ctx.fillStyle='#8fd0f0'; ctx.font=`bold ${r*0.13}px ui-monospace,monospace`;
+  ctx.fillText('x100', 0, r*0.28);
+  ctx.fillStyle='#dbe9f7'; ctx.font=`bold ${r*0.17}px ui-monospace,monospace`;
+  ctx.fillText(String(Math.round(rpm)), 0, r*0.58);
+  ctx.save(); ctx.rotate(ang(rpm));
+  ctx.beginPath(); ctx.moveTo(-r*0.05,r*0.12); ctx.lineTo(0,-r*0.80); ctx.lineTo(r*0.05,r*0.12); ctx.closePath();
+  ctx.fillStyle='#f5f7fa'; ctx.fill(); ctx.restore();
+  ctx.beginPath(); ctx.arc(0,0,r*0.07,0,Math.PI*2); ctx.fillStyle='#46586f'; ctx.fill();
+  ctx.restore();
+}
+function gaugeVSI(cv, fpm){
+  const { ctx, S, R } = clearG(cv);
+  ctx.save(); ctx.translate(R,R);
+  const r = R*0.93;
+  face(ctx, r);
+
+  const MAX = 2000;
+  const ang = v => clamp(v/MAX,-1,1)*Math.PI*0.72;
+
+  ctx.strokeStyle='#cfe3f5'; ctx.fillStyle='#dbe9f7';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  for(let v=-MAX; v<=MAX; v+=100){
+    const big = v%500===0;
+    const a = ang(v) - Math.PI/2;
+    const c=Math.cos(a), s=Math.sin(a);
+    ctx.lineWidth = big? r*0.024 : r*0.011;
+    ctx.beginPath();
+    ctx.moveTo(c*r*0.88, s*r*0.88);
+    ctx.lineTo(c*(big? r*0.75 : r*0.82), s*(big? r*0.75 : r*0.82));
+    ctx.stroke();
+    if(big && v!==0){
+      ctx.font = `bold ${r*0.15}px ui-monospace,monospace`;
+      ctx.fillStyle='#dbe9f7';
+      ctx.fillText(String(Math.abs(v)/1000), c*r*0.60, s*r*0.60);
+    }
+  }
+  ctx.fillStyle='#8fd0f0'; ctx.font=`bold ${r*0.14}px ui-monospace,monospace`;
+  ctx.fillText('UP', 0, -r*0.72);
+  ctx.fillText('DN', 0,  r*0.72);
+
+  // aguja
+  ctx.save(); ctx.rotate(ang(fpm));
+  ctx.beginPath();
+  ctx.moveTo(r*0.72,0); ctx.lineTo(-r*0.11, r*0.030); ctx.lineTo(-r*0.11,-r*0.030);
+  ctx.closePath(); ctx.fillStyle='#f2f6fa'; ctx.fill();
+  ctx.restore();
+  ctx.beginPath(); ctx.arc(0,0,r*0.075,0,Math.PI*2);
+  ctx.fillStyle='#2c3a4c'; ctx.fill();
+  ctx.strokeStyle='#7f90ad'; ctx.lineWidth=r*0.016; ctx.stroke();
+  ctx.restore();
+}
+      return { ASI: gaugeASI, ATT: gaugeATT, ALT: gaugeALT, TC: gaugeTC, HDG: gaugeHDG, VSI: gaugeVSI, RPM: gaugeRPM };
+    })(),
+    pa28: (function () {
+      const DEG = Math.PI / 180, RAD = 180 / Math.PI, clamp = (x, a, b) => x < a ? a : (x > b ? b : x);
+      const P = { Vs0: 55, Vs1: 60, Vfe: 103, Vno: 146, Vne: 183 }; // velocidades del velocímetro, de la app de origen
+function clearG(cv){
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,cv.width,cv.height);
+  return { ctx, S:cv.width, R:cv.width/2 };
+}
+function face(ctx,R,inner){
+  const g = ctx.createRadialGradient(-R*0.32,-R*0.34,R*0.08, 0,0,R);
+  g.addColorStop(0, inner||'#1c2836');
+  g.addColorStop(1, '#080d14');
+  ctx.beginPath(); ctx.arc(0,0,R,0,Math.PI*2);
+  ctx.fillStyle = g; ctx.fill();
+  ctx.lineWidth = R*0.055; ctx.strokeStyle = '#46586f'; ctx.stroke();
+  ctx.beginPath(); ctx.arc(0,0,R*0.955,0,Math.PI*2);
+  ctx.lineWidth = R*0.012; ctx.strokeStyle = '#0a1018'; ctx.stroke();
+}
+
+/* --- Velocímetro (kt) --- */
+function gaugeASI(cv, kt){
+  const { ctx, S, R } = clearG(cv);
+  ctx.save(); ctx.translate(R,R);
+  const r = R*0.93;
+  face(ctx, r);
+
+  const VMAX = 200, A0 = -Math.PI*0.75, A1 = Math.PI*0.75;
+  const ang = v => A0 + (v/VMAX)*(A1-A0);
+
+  const arc = (v1,v2,col,rad,w)=>{
+    ctx.beginPath(); ctx.arc(0,0,rad, ang(v1), ang(v2));
+    ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineCap='butt'; ctx.stroke();
+  };
+  arc(P.Vno,P.Vne,'#ffd54f', r*0.845, r*0.055);      // amarillo 146-183
+  arc(P.Vs1,P.Vno,'#3ddc84', r*0.845, r*0.055);      // verde 60-146
+  arc(P.Vs0,P.Vfe,'#f2f5f8', r*0.765, r*0.045);      // blanco 55-103
+  // línea roja
+  ctx.beginPath();
+  ctx.moveTo(Math.cos(ang(P.Vne))*r*0.78, Math.sin(ang(P.Vne))*r*0.78);
+  ctx.lineTo(Math.cos(ang(P.Vne))*r*0.90, Math.sin(ang(P.Vne))*r*0.90);
+  ctx.strokeStyle = '#ff4d4d'; ctx.lineWidth = r*0.028; ctx.stroke();
+
+  ctx.strokeStyle = '#cfe3f5'; ctx.fillStyle = '#dbe9f7';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  for(let v=0; v<=VMAX; v+=10){
+    const a = ang(v), c = Math.cos(a), s = Math.sin(a);
+    const big = v%20===0;
+    ctx.lineWidth = big? r*0.022 : r*0.012;
+    ctx.beginPath();
+    ctx.moveTo(c*r*0.90, s*r*0.90);
+    ctx.lineTo(c*(big? r*0.795 : r*0.85), s*(big? r*0.795 : r*0.85));
+    ctx.stroke();
+    if(big && v%40===0){
+      ctx.font = `bold ${r*0.155}px ui-monospace,monospace`;
+      ctx.fillText(String(v), c*r*0.64, s*r*0.64);
+    }
+  }
+  // aguja
+  ctx.save(); ctx.rotate(ang(clamp(kt,0,VMAX)));
+  ctx.beginPath();
+  ctx.moveTo(r*0.10, 0);
+  ctx.lineTo(-r*0.13,  r*0.035);
+  ctx.lineTo(-r*0.13, -r*0.035);
+  ctx.closePath();
+  ctx.fillStyle = '#f7fafd'; ctx.fill();
+  ctx.strokeStyle='#9fb4d0'; ctx.lineWidth=r*0.012; ctx.stroke();
+  ctx.restore();
+  ctx.beginPath(); ctx.arc(0,0,r*0.085,0,Math.PI*2);
+  ctx.fillStyle='#2c3a4c'; ctx.fill();
+  ctx.strokeStyle='#7f90ad'; ctx.lineWidth=r*0.018; ctx.stroke();
+  ctx.restore();
+}
+
+/* --- Horizonte artificial --- */
+function gaugeATT(cv, pitchRad, rollRad){
+  const { ctx, S, R } = clearG(cv);
+  ctx.save(); ctx.translate(R,R);
+  const r = R*0.93;
+
+  ctx.save();
+  ctx.beginPath(); ctx.arc(0,0,r*0.90,0,Math.PI*2); ctx.clip();
+
+  ctx.rotate(-rollRad);
+  const ppd = r*0.055;                       // píxeles por grado
+  const yOff = pitchRad*RAD*ppd;
+  ctx.translate(0, yOff);
+
+  // cielo
+  ctx.fillStyle = '#2f7fc4';
+  ctx.fillRect(-r*2, -r*2.2, r*4, r*2.2);
+  // tierra
+  ctx.fillStyle = '#7a5230';
+  ctx.fillRect(-r*2, 0, r*4, r*2.2);
+  // línea de horizonte
+  ctx.strokeStyle='#ffffff'; ctx.lineWidth=r*0.022;
+  ctx.beginPath(); ctx.moveTo(-r*2,0); ctx.lineTo(r*2,0); ctx.stroke();
+
+  // líneas de pitch
+  ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.fillStyle='rgba(255,255,255,.9)';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font = `bold ${r*0.11}px ui-monospace,monospace`;
+  for(let p=-60; p<=60; p+=10){
+    if(p===0) continue;
+    const y = -p*ppd;
+    const w = (p%20===0) ? r*0.26 : r*0.14;
+    ctx.lineWidth = r*0.014;
+    ctx.beginPath();
+    ctx.moveTo(-w,y); ctx.lineTo(-w*0.35,y);
+    ctx.moveTo( w*0.35,y); ctx.lineTo( w,y);
+    ctx.stroke();
+    if(p%20===0){
+      ctx.fillText(String(Math.abs(p)), -w*0.55, y);
+      ctx.fillText(String(Math.abs(p)),  w*0.55, y);
+    }
+  }
+  ctx.restore();
+
+  // símbolo de aeronave
+  ctx.strokeStyle='#f0b429'; ctx.lineWidth=r*0.055; ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.moveTo(-r*0.52, 0); ctx.lineTo(-r*0.16, 0);
+  ctx.moveTo( r*0.16, 0); ctx.lineTo( r*0.52, 0);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(0,0,r*0.045,0,Math.PI*2); ctx.fillStyle='#f0b429'; ctx.fill();
+
+  // anillo de banco
+  ctx.strokeStyle='#c8d8ea'; ctx.lineWidth=r*0.012;
+  ctx.beginPath(); ctx.arc(0,0,r*0.88,0,Math.PI*2); ctx.stroke();
+  ctx.save(); ctx.rotate(-rollRad);
+  ctx.fillStyle='#f0b429';
+  ctx.beginPath();
+  ctx.moveTo(0,-r*0.88); ctx.lineTo(-r*0.055,-r*0.76); ctx.lineTo(r*0.055,-r*0.76);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+
+  ctx.restore();
+}
+
+/* --- Altímetro --- */
+function gaugeALT(cv, ft){
+  const { ctx, S, R } = clearG(cv);
+  ctx.save(); ctx.translate(R,R);
+  const r = R*0.93;
+  face(ctx, r);
+
+  ctx.strokeStyle='#cfe3f5'; ctx.fillStyle='#dbe9f7';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  for(let i=0;i<50;i++){
+    const a = (i/50)*Math.PI*2 - Math.PI/2;
+    const big = i%5===0;
+    const c=Math.cos(a), s=Math.sin(a);
+    ctx.lineWidth = big? r*0.026 : r*0.012;
+    ctx.beginPath();
+    ctx.moveTo(c*r*0.88, s*r*0.88);
+    ctx.lineTo(c*(big? r*0.75 : r*0.82), s*(big? r*0.75 : r*0.82));
+    ctx.stroke();
+  }
+  for(let i=0;i<10;i++){
+    const a = (i/10)*Math.PI*2 - Math.PI/2;
+    ctx.font = `bold ${r*0.20}px ui-monospace,monospace`;
+    ctx.fillText(String(i), Math.cos(a)*r*0.58, Math.sin(a)*r*0.58);
+  }
+
+  const pos = ((ft % 10000)+10000)%10000;
+  // aguja larga (cientos)
+  ctx.save();
+  ctx.rotate((pos%1000)/1000*Math.PI*2);
+  ctx.beginPath();
+  ctx.moveTo(r*0.72,0); ctx.lineTo(-r*0.10, r*0.018); ctx.lineTo(-r*0.10,-r*0.018);
+  ctx.closePath(); ctx.fillStyle='#f2f6fa'; ctx.fill(); ctx.restore();
+
+  // aguja corta (millares)
+  ctx.save();
+  ctx.rotate(pos/10000*Math.PI*2);
+  ctx.beginPath();
+  ctx.moveTo(r*0.50,0); ctx.lineTo(-r*0.08, r*0.038); ctx.lineTo(-r*0.08,-r*0.038);
+  ctx.closePath(); ctx.fillStyle='#dfe9f5'; ctx.fill(); ctx.restore();
+
+  // puntero 10.000 ft
+  const tens = Math.floor(Math.max(0,ft)/10000);
+  if(tens>0){
+    ctx.save(); ctx.rotate((tens/10)*Math.PI*2 - Math.PI/2);
+    ctx.beginPath();
+    ctx.moveTo(0,-r*0.62); ctx.lineTo(-r*0.05,-r*0.50); ctx.lineTo(r*0.05,-r*0.50);
+    ctx.closePath(); ctx.fillStyle='#f0b429'; ctx.fill();
+    ctx.restore();
+  }
+  ctx.beginPath(); ctx.arc(0,0,r*0.075,0,Math.PI*2);
+  ctx.fillStyle='#2c3a4c'; ctx.fill();
+  ctx.strokeStyle='#7f90ad'; ctx.lineWidth=r*0.016; ctx.stroke();
+
+  // ventana Kollsman
+  ctx.fillStyle='#0a1220';
+  ctx.fillRect(-r*0.30, r*0.52, r*0.60, r*0.20);
+  ctx.strokeStyle='#4a5a72'; ctx.lineWidth=r*0.014;
+  ctx.strokeRect(-r*0.30, r*0.52, r*0.60, r*0.20);
+  ctx.fillStyle='#8fd0f0';
+  ctx.font=`bold ${r*0.15}px ui-monospace,monospace`;
+  ctx.fillText('29.92', 0, r*0.625);
+
+  ctx.restore();
+}
+
+/* --- Coordinador de viraje --- */
+function gaugeTC(cv, rollRate, slip){
+  const { ctx, S, R } = clearG(cv);
+  ctx.save(); ctx.translate(R,R);
+  const r = R*0.93;
+  face(ctx, r, '#16202c');
+
+  // vista superior: ala que se inclina con la tasa de alabeo
+  const bank = clamp(rollRate*0.9, -1, 1) * 0.55;
+  ctx.save();
+  ctx.translate(0, -r*0.22);
+  ctx.rotate(bank);
+  ctx.fillStyle = '#e6eef7';
+  ctx.fillRect(-r*0.58, -r*0.035, r*1.16, r*0.07);
+  ctx.beginPath(); ctx.arc(0,0,r*0.10,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+
+  // marcas L / R
+  ctx.fillStyle='#cfe3f5'; ctx.font=`bold ${r*0.16}px ui-monospace,monospace`;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('L', -r*0.66, -r*0.22);
+  ctx.fillText('R',  r*0.66, -r*0.22);
+
+  // tubo del inclinómetro
+  const tubeY = r*0.42, tubeW = r*1.15, tubeH = r*0.24;
+  ctx.beginPath();
+  ctx.moveTo(-tubeW/2, tubeY - tubeH*0.6);
+  ctx.quadraticCurveTo(0, tubeY + tubeH*1.1, tubeW/2, tubeY - tubeH*0.6);
+  ctx.lineTo(tubeW/2, tubeY - tubeH*0.25);
+  ctx.quadraticCurveTo(0, tubeY + tubeH*1.5, -tubeW/2, tubeY - tubeH*0.25);
+  ctx.closePath();
+  ctx.fillStyle='#0a1220'; ctx.fill();
+  ctx.strokeStyle='#4a5a72'; ctx.lineWidth=r*0.016; ctx.stroke();
+
+  // bola
+  const bx = clamp(slip,-1,1)*tubeW*0.40;
+  const by = tubeY - tubeH*0.30 + Math.abs(bx/tubeW)*tubeH*0.9;
+  ctx.beginPath(); ctx.arc(bx, by, r*0.085, 0, Math.PI*2);
+  const gr = ctx.createRadialGradient(bx-r*0.03, by-r*0.03, r*0.01, bx, by, r*0.09);
+  gr.addColorStop(0,'#ffffff'); gr.addColorStop(1,'#8f9fb4');
+  ctx.fillStyle = gr; ctx.fill();
+
+  ctx.restore();
+}
+
+/* --- Indicador de rumbo (giroscópico) --- */
+function gaugeHDG(cv, psi){
+  const { ctx, S, R } = clearG(cv);
+  ctx.save(); ctx.translate(R,R);
+  const r = R*0.93;
+  face(ctx, r);
+
+  ctx.save();
+  ctx.rotate(-psi);
+  ctx.strokeStyle='#cfe3f5'; ctx.fillStyle='#dbe9f7';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  for(let d=0; d<360; d+=5){
+    const a = (d-90)*DEG;
+    const c = Math.cos(a), s = Math.sin(a);
+    const big = d%30===0, mid = d%10===0;
+    ctx.lineWidth = big? r*0.028 : (mid? r*0.018 : r*0.010);
+    ctx.beginPath();
+    ctx.moveTo(c*r*0.88, s*r*0.88);
+    ctx.lineTo(c*(big? r*0.74 : (mid? r*0.80 : r*0.84)),
+               s*(big? r*0.74 : (mid? r*0.80 : r*0.84)));
+    ctx.stroke();
+  }
+  const lbl = ['N','3','6','E','12','15','S','21','24','W','30','33'];
+  ctx.font = `bold ${r*0.20}px ui-monospace,monospace`;
+  for(let i=0;i<12;i++){
+    const a = (i*30-90)*DEG;
+    ctx.fillStyle = (i%3===0) ? '#8fd0f0' : '#dbe9f7';
+    ctx.fillText(lbl[i], Math.cos(a)*r*0.55, Math.sin(a)*r*0.55);
+  }
+  ctx.restore();
+
+  // lubber line
+  ctx.fillStyle='#f0b429';
+  ctx.beginPath();
+  ctx.moveTo(0,-r*0.92); ctx.lineTo(-r*0.055,-r*0.74); ctx.lineTo(r*0.055,-r*0.74);
+  ctx.closePath(); ctx.fill();
+
+  // silueta avión
+  ctx.strokeStyle='#e8eef5'; ctx.lineWidth=r*0.030; ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.moveTo(0, r*0.40); ctx.lineTo(0, -r*0.05);
+  ctx.moveTo(-r*0.26, r*0.10); ctx.lineTo(r*0.26, r*0.10);
+  ctx.moveTo(-r*0.12, r*0.34); ctx.lineTo(r*0.12, r*0.34);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/* --- Variómetro --- */
+function gaugeRPM(cv, rpm){
+  const { ctx, S, R } = clearG(cv);
+  ctx.save(); ctx.translate(R,R);
+  const r = R*0.93; face(ctx, r);
+  const MAX = 3000, A0 = -135*DEG, A1 = 135*DEG;
+  const ang = v => A0 + clamp(v/MAX,0,1)*(A1-A0);
+  const arc = (v0,v1,col)=>{ ctx.beginPath(); ctx.arc(0,0,r*0.84,ang(v0)-Math.PI/2,ang(v1)-Math.PI/2); ctx.lineWidth=r*0.07; ctx.strokeStyle=col; ctx.stroke(); };
+  arc(500,2000,'rgba(255,255,255,.35)'); arc(2000,2700,'#3ddc84'); arc(2700,3000,'#ff5c5c');
+  ctx.strokeStyle='#cfe3f5'; ctx.fillStyle='#dbe9f7'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  for(let v=0; v<=MAX; v+=250){
+    const big = v%500===0, a = ang(v)-Math.PI/2, c=Math.cos(a), sn=Math.sin(a);
+    ctx.lineWidth = big ? r*0.024 : r*0.011;
+    ctx.beginPath(); ctx.moveTo(c*r*0.76, sn*r*0.76); ctx.lineTo(c*r*(big?0.62:0.68), sn*r*(big?0.62:0.68)); ctx.stroke();
+    if(big){ ctx.font = `bold ${r*0.15}px ui-monospace,monospace`; ctx.fillText(String(v/100), c*r*0.48, sn*r*0.48); }
+  }
+  ctx.fillStyle='#8fd0f0'; ctx.font=`bold ${r*0.13}px ui-monospace,monospace`;
+  ctx.fillText('x100', 0, r*0.28);
+  ctx.fillStyle='#dbe9f7'; ctx.font=`bold ${r*0.17}px ui-monospace,monospace`;
+  ctx.fillText(String(Math.round(rpm)), 0, r*0.58);
+  ctx.save(); ctx.rotate(ang(rpm));
+  ctx.beginPath(); ctx.moveTo(-r*0.05,r*0.12); ctx.lineTo(0,-r*0.80); ctx.lineTo(r*0.05,r*0.12); ctx.closePath();
+  ctx.fillStyle='#f5f7fa'; ctx.fill(); ctx.restore();
+  ctx.beginPath(); ctx.arc(0,0,r*0.07,0,Math.PI*2); ctx.fillStyle='#46586f'; ctx.fill();
+  ctx.restore();
+}
+function gaugeMP(cv, mp){
+  const { ctx, S, R } = clearG(cv);
+  ctx.save(); ctx.translate(R,R);
+  const r = R*0.93; face(ctx, r);
+  const MAX = 35, A0 = -135*DEG, A1 = 135*DEG;
+  const ang = v => A0 + clamp(v/MAX,0,1)*(A1-A0);
+  const arc = (v0,v1,col)=>{ ctx.beginPath(); ctx.arc(0,0,r*0.84,ang(v0)-Math.PI/2,ang(v1)-Math.PI/2); ctx.lineWidth=r*0.07; ctx.strokeStyle=col; ctx.stroke(); };
+  arc(10,15,'rgba(255,255,255,.30)'); arc(15,25,'#3ddc84'); arc(25,30,'#ffd54f'); arc(30,35,'#ff5c5c');
+  ctx.strokeStyle='#cfe3f5'; ctx.fillStyle='#dbe9f7'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  for(let v=0; v<=MAX; v+=5){
+    const big = v%10===0, a = ang(v)-Math.PI/2, c=Math.cos(a), sn=Math.sin(a);
+    ctx.lineWidth = big ? r*0.024 : r*0.011;
+    ctx.beginPath(); ctx.moveTo(c*r*0.76, sn*r*0.76); ctx.lineTo(c*r*(big?0.62:0.68), sn*r*(big?0.62:0.68)); ctx.stroke();
+    if(big){ ctx.font = `bold ${r*0.15}px ui-monospace,monospace`; ctx.fillText(String(v), c*r*0.48, sn*r*0.48); }
+  }
+  ctx.fillStyle='#8fd0f0'; ctx.font=`bold ${r*0.12}px ui-monospace,monospace`;
+  ctx.fillText('MP', 0, r*0.26);
+  ctx.fillStyle='#dbe9f7'; ctx.font=`bold ${r*0.17}px ui-monospace,monospace`;
+  ctx.fillText(mp.toFixed(1), 0, r*0.58);
+  ctx.save(); ctx.rotate(ang(mp));
+  ctx.beginPath(); ctx.moveTo(-r*0.05,r*0.12); ctx.lineTo(0,-r*0.80); ctx.lineTo(r*0.05,r*0.12); ctx.closePath();
+  ctx.fillStyle='#f5f7fa'; ctx.fill(); ctx.restore();
+  ctx.beginPath(); ctx.arc(0,0,r*0.07,0,Math.PI*2); ctx.fillStyle='#46586f'; ctx.fill();
+  ctx.restore();
+}
+function gaugeVSI(cv, fpm){
+  const { ctx, S, R } = clearG(cv);
+  ctx.save(); ctx.translate(R,R);
+  const r = R*0.93;
+  face(ctx, r);
+
+  const MAX = 2000;
+  const ang = v => clamp(v/MAX,-1,1)*Math.PI*0.72;
+
+  ctx.strokeStyle='#cfe3f5'; ctx.fillStyle='#dbe9f7';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  for(let v=-MAX; v<=MAX; v+=100){
+    const big = v%500===0;
+    const a = ang(v) - Math.PI/2;
+    const c=Math.cos(a), s=Math.sin(a);
+    ctx.lineWidth = big? r*0.024 : r*0.011;
+    ctx.beginPath();
+    ctx.moveTo(c*r*0.88, s*r*0.88);
+    ctx.lineTo(c*(big? r*0.75 : r*0.82), s*(big? r*0.75 : r*0.82));
+    ctx.stroke();
+    if(big && v!==0){
+      ctx.font = `bold ${r*0.15}px ui-monospace,monospace`;
+      ctx.fillStyle='#dbe9f7';
+      ctx.fillText(String(Math.abs(v)/1000), c*r*0.60, s*r*0.60);
+    }
+  }
+  ctx.fillStyle='#8fd0f0'; ctx.font=`bold ${r*0.14}px ui-monospace,monospace`;
+  ctx.fillText('UP', 0, -r*0.72);
+  ctx.fillText('DN', 0,  r*0.72);
+
+  // aguja
+  ctx.save(); ctx.rotate(ang(fpm));
+  ctx.beginPath();
+  ctx.moveTo(r*0.72,0); ctx.lineTo(-r*0.11, r*0.030); ctx.lineTo(-r*0.11,-r*0.030);
+  ctx.closePath(); ctx.fillStyle='#f2f6fa'; ctx.fill();
+  ctx.restore();
+  ctx.beginPath(); ctx.arc(0,0,r*0.075,0,Math.PI*2);
+  ctx.fillStyle='#2c3a4c'; ctx.fill();
+  ctx.strokeStyle='#7f90ad'; ctx.lineWidth=r*0.016; ctx.stroke();
+  ctx.restore();
+}
+      return { ASI: gaugeASI, ATT: gaugeATT, ALT: gaugeALT, TC: gaugeTC, HDG: gaugeHDG, VSI: gaugeVSI, RPM: gaugeRPM, MP: gaugeMP };
+    })(),
+    extra: (function () {
+      const DEG = Math.PI / 180, RAD = 180 / Math.PI, clamp = (x, a, b) => x < a ? a : (x > b ? b : x);
+      const P = { Vs0: 82, Vs1: 100, Vfe: 170, Vno: 380, Vne: 437 }; // velocidades del velocímetro, de la app de origen
+function clearG(cv){
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,cv.width,cv.height);
+  return { ctx, S:cv.width, R:cv.width/2 };
+}
+function face(ctx,R,inner){
+  const g = ctx.createRadialGradient(-R*0.32,-R*0.34,R*0.08, 0,0,R);
+  g.addColorStop(0, inner||'#1c2836');
+  g.addColorStop(1, '#080d14');
+  ctx.beginPath(); ctx.arc(0,0,R,0,Math.PI*2);
+  ctx.fillStyle = g; ctx.fill();
+  ctx.lineWidth = R*0.055; ctx.strokeStyle = '#46586f'; ctx.stroke();
+  ctx.beginPath(); ctx.arc(0,0,R*0.955,0,Math.PI*2);
+  ctx.lineWidth = R*0.012; ctx.strokeStyle = '#0a1018'; ctx.stroke();
+}
+
+/* --- Velocímetro (kt) --- */
+function gaugeASI(cv, kt){
+  const { ctx, S, R } = clearG(cv);
+  ctx.save(); ctx.translate(R,R);
+  const r = R*0.93;
+  face(ctx, r);
+
+  const VMAX = 500, A0 = -Math.PI*0.75, A1 = Math.PI*0.75;
+  const ang = v => A0 + (v/VMAX)*(A1-A0);
+
+  const arc = (v1,v2,col,rad,w)=>{
+    ctx.beginPath(); ctx.arc(0,0,rad, ang(v1), ang(v2));
+    ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineCap='butt'; ctx.stroke();
+  };
+  arc(P.Vno,P.Vne,'#ffd54f', r*0.845, r*0.055);      // amarillo 380-437
+  arc(P.Vs1,P.Vno,'#3ddc84', r*0.845, r*0.055);      // verde 100-380
+  arc(P.Vs0,P.Vfe,'#f2f5f8', r*0.765, r*0.045);      // blanco 82-170 (flaps)
+  // línea roja
+  ctx.beginPath();
+  ctx.moveTo(Math.cos(ang(P.Vne))*r*0.78, Math.sin(ang(P.Vne))*r*0.78);
+  ctx.lineTo(Math.cos(ang(P.Vne))*r*0.90, Math.sin(ang(P.Vne))*r*0.90);
+  ctx.strokeStyle = '#ff4d4d'; ctx.lineWidth = r*0.028; ctx.stroke();
+
+  ctx.strokeStyle = '#cfe3f5'; ctx.fillStyle = '#dbe9f7';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  for(let v=0; v<=VMAX; v+=25){
+    const a = ang(v), c = Math.cos(a), s = Math.sin(a);
+    const big = v%50===0;
+    ctx.lineWidth = big? r*0.022 : r*0.012;
+    ctx.beginPath();
+    ctx.moveTo(c*r*0.90, s*r*0.90);
+    ctx.lineTo(c*(big? r*0.795 : r*0.85), s*(big? r*0.795 : r*0.85));
+    ctx.stroke();
+    if(big && v%100===0){
+      ctx.font = `bold ${r*0.155}px ui-monospace,monospace`;
+      ctx.fillText(String(v), c*r*0.64, s*r*0.64);
+    }
+  }
+  // aguja
+  ctx.save(); ctx.rotate(ang(clamp(kt,0,VMAX)));
+  ctx.beginPath();
+  ctx.moveTo(r*0.10, 0);
+  ctx.lineTo(-r*0.13,  r*0.035);
+  ctx.lineTo(-r*0.13, -r*0.035);
+  ctx.closePath();
+  ctx.fillStyle = '#f7fafd'; ctx.fill();
+  ctx.strokeStyle='#9fb4d0'; ctx.lineWidth=r*0.012; ctx.stroke();
+  ctx.restore();
+  ctx.beginPath(); ctx.arc(0,0,r*0.085,0,Math.PI*2);
+  ctx.fillStyle='#2c3a4c'; ctx.fill();
+  ctx.strokeStyle='#7f90ad'; ctx.lineWidth=r*0.018; ctx.stroke();
+  ctx.restore();
+}
+
+/* --- Horizonte artificial --- */
+function gaugeATT(cv, pitchRad, rollRad){
+  const { ctx, S, R } = clearG(cv);
+  ctx.save(); ctx.translate(R,R);
+  const r = R*0.93;
+
+  ctx.save();
+  ctx.beginPath(); ctx.arc(0,0,r*0.90,0,Math.PI*2); ctx.clip();
+
+  ctx.rotate(-rollRad);
+  const ppd = r*0.055;                       // píxeles por grado
+  const yOff = pitchRad*RAD*ppd;
+  ctx.translate(0, yOff);
+
+  // cielo
+  ctx.fillStyle = '#2f7fc4';
+  ctx.fillRect(-r*2, -r*2.2, r*4, r*2.2);
+  // tierra
+  ctx.fillStyle = '#7a5230';
+  ctx.fillRect(-r*2, 0, r*4, r*2.2);
+  // línea de horizonte
+  ctx.strokeStyle='#ffffff'; ctx.lineWidth=r*0.022;
+  ctx.beginPath(); ctx.moveTo(-r*2,0); ctx.lineTo(r*2,0); ctx.stroke();
+
+  // líneas de pitch
+  ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.fillStyle='rgba(255,255,255,.9)';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font = `bold ${r*0.11}px ui-monospace,monospace`;
+  for(let p=-60; p<=60; p+=10){
+    if(p===0) continue;
+    const y = -p*ppd;
+    const w = (p%20===0) ? r*0.26 : r*0.14;
+    ctx.lineWidth = r*0.014;
+    ctx.beginPath();
+    ctx.moveTo(-w,y); ctx.lineTo(-w*0.35,y);
+    ctx.moveTo( w*0.35,y); ctx.lineTo( w,y);
+    ctx.stroke();
+    if(p%20===0){
+      ctx.fillText(String(Math.abs(p)), -w*0.55, y);
+      ctx.fillText(String(Math.abs(p)),  w*0.55, y);
+    }
+  }
+  ctx.restore();
+
+  // símbolo de aeronave
+  ctx.strokeStyle='#f0b429'; ctx.lineWidth=r*0.055; ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.moveTo(-r*0.52, 0); ctx.lineTo(-r*0.16, 0);
+  ctx.moveTo( r*0.16, 0); ctx.lineTo( r*0.52, 0);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(0,0,r*0.045,0,Math.PI*2); ctx.fillStyle='#f0b429'; ctx.fill();
+
+  // anillo de banco
+  ctx.strokeStyle='#c8d8ea'; ctx.lineWidth=r*0.012;
+  ctx.beginPath(); ctx.arc(0,0,r*0.88,0,Math.PI*2); ctx.stroke();
+  ctx.save(); ctx.rotate(-rollRad);
+  ctx.fillStyle='#f0b429';
+  ctx.beginPath();
+  ctx.moveTo(0,-r*0.88); ctx.lineTo(-r*0.055,-r*0.76); ctx.lineTo(r*0.055,-r*0.76);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+
+  ctx.restore();
+}
+
+/* --- Altímetro --- */
+function gaugeALT(cv, ft){
+  const { ctx, S, R } = clearG(cv);
+  ctx.save(); ctx.translate(R,R);
+  const r = R*0.93;
+  face(ctx, r);
+
+  ctx.strokeStyle='#cfe3f5'; ctx.fillStyle='#dbe9f7';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  for(let i=0;i<50;i++){
+    const a = (i/50)*Math.PI*2 - Math.PI/2;
+    const big = i%5===0;
+    const c=Math.cos(a), s=Math.sin(a);
+    ctx.lineWidth = big? r*0.026 : r*0.012;
+    ctx.beginPath();
+    ctx.moveTo(c*r*0.88, s*r*0.88);
+    ctx.lineTo(c*(big? r*0.75 : r*0.82), s*(big? r*0.75 : r*0.82));
+    ctx.stroke();
+  }
+  for(let i=0;i<10;i++){
+    const a = (i/10)*Math.PI*2 - Math.PI/2;
+    ctx.font = `bold ${r*0.20}px ui-monospace,monospace`;
+    ctx.fillText(String(i), Math.cos(a)*r*0.58, Math.sin(a)*r*0.58);
+  }
+
+  const pos = ((ft % 10000)+10000)%10000;
+  // aguja larga (cientos)
+  ctx.save();
+  ctx.rotate((pos%1000)/1000*Math.PI*2);
+  ctx.beginPath();
+  ctx.moveTo(r*0.72,0); ctx.lineTo(-r*0.10, r*0.018); ctx.lineTo(-r*0.10,-r*0.018);
+  ctx.closePath(); ctx.fillStyle='#f2f6fa'; ctx.fill(); ctx.restore();
+
+  // aguja corta (millares)
+  ctx.save();
+  ctx.rotate(pos/10000*Math.PI*2);
+  ctx.beginPath();
+  ctx.moveTo(r*0.50,0); ctx.lineTo(-r*0.08, r*0.038); ctx.lineTo(-r*0.08,-r*0.038);
+  ctx.closePath(); ctx.fillStyle='#dfe9f5'; ctx.fill(); ctx.restore();
+
+  // puntero 10.000 ft
+  const tens = Math.floor(Math.max(0,ft)/10000);
+  if(tens>0){
+    ctx.save(); ctx.rotate((tens/10)*Math.PI*2 - Math.PI/2);
+    ctx.beginPath();
+    ctx.moveTo(0,-r*0.62); ctx.lineTo(-r*0.05,-r*0.50); ctx.lineTo(r*0.05,-r*0.50);
+    ctx.closePath(); ctx.fillStyle='#f0b429'; ctx.fill();
+    ctx.restore();
+  }
+  ctx.beginPath(); ctx.arc(0,0,r*0.075,0,Math.PI*2);
+  ctx.fillStyle='#2c3a4c'; ctx.fill();
+  ctx.strokeStyle='#7f90ad'; ctx.lineWidth=r*0.016; ctx.stroke();
+
+  // ventana Kollsman
+  ctx.fillStyle='#0a1220';
+  ctx.fillRect(-r*0.30, r*0.52, r*0.60, r*0.20);
+  ctx.strokeStyle='#4a5a72'; ctx.lineWidth=r*0.014;
+  ctx.strokeRect(-r*0.30, r*0.52, r*0.60, r*0.20);
+  ctx.fillStyle='#8fd0f0';
+  ctx.font=`bold ${r*0.15}px ui-monospace,monospace`;
+  ctx.fillText('29.92', 0, r*0.625);
+
+  ctx.restore();
+}
+
+/* --- Coordinador de viraje --- */
+function gaugeTC(cv, rollRate, slip){
+  const { ctx, S, R } = clearG(cv);
+  ctx.save(); ctx.translate(R,R);
+  const r = R*0.93;
+  face(ctx, r, '#16202c');
+
+  // vista superior: ala que se inclina con la tasa de alabeo
+  const bank = clamp(rollRate*0.9, -1, 1) * 0.55;
+  ctx.save();
+  ctx.translate(0, -r*0.22);
+  ctx.rotate(bank);
+  ctx.fillStyle = '#e6eef7';
+  ctx.fillRect(-r*0.58, -r*0.035, r*1.16, r*0.07);
+  ctx.beginPath(); ctx.arc(0,0,r*0.10,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+
+  // marcas L / R
+  ctx.fillStyle='#cfe3f5'; ctx.font=`bold ${r*0.16}px ui-monospace,monospace`;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('L', -r*0.66, -r*0.22);
+  ctx.fillText('R',  r*0.66, -r*0.22);
+
+  // tubo del inclinómetro
+  const tubeY = r*0.42, tubeW = r*1.15, tubeH = r*0.24;
+  ctx.beginPath();
+  ctx.moveTo(-tubeW/2, tubeY - tubeH*0.6);
+  ctx.quadraticCurveTo(0, tubeY + tubeH*1.1, tubeW/2, tubeY - tubeH*0.6);
+  ctx.lineTo(tubeW/2, tubeY - tubeH*0.25);
+  ctx.quadraticCurveTo(0, tubeY + tubeH*1.5, -tubeW/2, tubeY - tubeH*0.25);
+  ctx.closePath();
+  ctx.fillStyle='#0a1220'; ctx.fill();
+  ctx.strokeStyle='#4a5a72'; ctx.lineWidth=r*0.016; ctx.stroke();
+
+  // bola
+  const bx = clamp(slip,-1,1)*tubeW*0.40;
+  const by = tubeY - tubeH*0.30 + Math.abs(bx/tubeW)*tubeH*0.9;
+  ctx.beginPath(); ctx.arc(bx, by, r*0.085, 0, Math.PI*2);
+  const gr = ctx.createRadialGradient(bx-r*0.03, by-r*0.03, r*0.01, bx, by, r*0.09);
+  gr.addColorStop(0,'#ffffff'); gr.addColorStop(1,'#8f9fb4');
+  ctx.fillStyle = gr; ctx.fill();
+
+  ctx.restore();
+}
+
+/* --- Indicador de rumbo (giroscópico) --- */
+function gaugeHDG(cv, psi){
+  const { ctx, S, R } = clearG(cv);
+  ctx.save(); ctx.translate(R,R);
+  const r = R*0.93;
+  face(ctx, r);
+
+  ctx.save();
+  ctx.rotate(-psi);
+  ctx.strokeStyle='#cfe3f5'; ctx.fillStyle='#dbe9f7';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  for(let d=0; d<360; d+=5){
+    const a = (d-90)*DEG;
+    const c = Math.cos(a), s = Math.sin(a);
+    const big = d%30===0, mid = d%10===0;
+    ctx.lineWidth = big? r*0.028 : (mid? r*0.018 : r*0.010);
+    ctx.beginPath();
+    ctx.moveTo(c*r*0.88, s*r*0.88);
+    ctx.lineTo(c*(big? r*0.74 : (mid? r*0.80 : r*0.84)),
+               s*(big? r*0.74 : (mid? r*0.80 : r*0.84)));
+    ctx.stroke();
+  }
+  const lbl = ['N','3','6','E','12','15','S','21','24','W','30','33'];
+  ctx.font = `bold ${r*0.20}px ui-monospace,monospace`;
+  for(let i=0;i<12;i++){
+    const a = (i*30-90)*DEG;
+    ctx.fillStyle = (i%3===0) ? '#8fd0f0' : '#dbe9f7';
+    ctx.fillText(lbl[i], Math.cos(a)*r*0.55, Math.sin(a)*r*0.55);
+  }
+  ctx.restore();
+
+  // lubber line
+  ctx.fillStyle='#f0b429';
+  ctx.beginPath();
+  ctx.moveTo(0,-r*0.92); ctx.lineTo(-r*0.055,-r*0.74); ctx.lineTo(r*0.055,-r*0.74);
+  ctx.closePath(); ctx.fill();
+
+  // silueta avión
+  ctx.strokeStyle='#e8eef5'; ctx.lineWidth=r*0.030; ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.moveTo(0, r*0.40); ctx.lineTo(0, -r*0.05);
+  ctx.moveTo(-r*0.26, r*0.10); ctx.lineTo(r*0.26, r*0.10);
+  ctx.moveTo(-r*0.12, r*0.34); ctx.lineTo(r*0.12, r*0.34);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/* --- Variómetro --- */
+function gaugeRPM(cv, rpm){
+  const { ctx, S, R } = clearG(cv);
+  ctx.save(); ctx.translate(R,R);
+  const r = R*0.93; face(ctx, r);
+  const MAX = 110, A0 = -135*DEG, A1 = 135*DEG;
+  const ang = v => A0 + clamp(v/MAX,0,1)*(A1-A0);
+  const arc = (v0,v1,col)=>{ ctx.beginPath(); ctx.arc(0,0,r*0.84,ang(v0)-Math.PI/2,ang(v1)-Math.PI/2); ctx.lineWidth=r*0.07; ctx.strokeStyle=col; ctx.stroke(); };
+  arc(0,50,'rgba(255,255,255,.30)'); arc(50,100,'#3ddc84'); arc(100,104,'#ffd54f'); arc(104,110,'#ff5c5c');
+  ctx.strokeStyle='#cfe3f5'; ctx.fillStyle='#dbe9f7'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  for(let v=0; v<=MAX; v+=10){
+    const big = v%20===0, a = ang(v)-Math.PI/2, c=Math.cos(a), sn=Math.sin(a);
+    ctx.lineWidth = big ? r*0.024 : r*0.011;
+    ctx.beginPath(); ctx.moveTo(c*r*0.76, sn*r*0.76); ctx.lineTo(c*r*(big?0.62:0.68), sn*r*(big?0.62:0.68)); ctx.stroke();
+    if(big){ ctx.font = `bold ${r*0.15}px ui-monospace,monospace`; ctx.fillText(String(v), c*r*0.48, sn*r*0.48); }
+  }
+  ctx.fillStyle='#8fd0f0'; ctx.font=`bold ${r*0.13}px ui-monospace,monospace`;
+  ctx.fillText('N %', 0, r*0.28);
+  ctx.fillStyle='#dbe9f7'; ctx.font=`bold ${r*0.17}px ui-monospace,monospace`;
+  ctx.fillText(rpm.toFixed(0), 0, r*0.58);
+  ctx.save(); ctx.rotate(ang(rpm));
+  ctx.beginPath(); ctx.moveTo(-r*0.05,r*0.12); ctx.lineTo(0,-r*0.80); ctx.lineTo(r*0.05,r*0.12); ctx.closePath();
+  ctx.fillStyle='#f5f7fa'; ctx.fill(); ctx.restore();
+  ctx.beginPath(); ctx.arc(0,0,r*0.07,0,Math.PI*2); ctx.fillStyle='#46586f'; ctx.fill();
+  ctx.restore();
+}
+function gaugeEGT(cv, egt){
+  const { ctx, S, R } = clearG(cv);
+  ctx.save(); ctx.translate(R,R);
+  const r = R*0.93; face(ctx, r);
+  const MAX = 900, A0 = -135*DEG, A1 = 135*DEG;
+  const ang = v => A0 + clamp(v/MAX,0,1)*(A1-A0);
+  const arc = (v0,v1,col)=>{ ctx.beginPath(); ctx.arc(0,0,r*0.84,ang(v0)-Math.PI/2,ang(v1)-Math.PI/2); ctx.lineWidth=r*0.07; ctx.strokeStyle=col; ctx.stroke(); };
+  arc(300,690,'#3ddc84'); arc(690,750,'#ffd54f'); arc(750,900,'#ff5c5c');
+  ctx.strokeStyle='#cfe3f5'; ctx.fillStyle='#dbe9f7'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  for(let v=0; v<=MAX; v+=100){
+    const a = ang(v)-Math.PI/2, c=Math.cos(a), sn=Math.sin(a);
+    ctx.lineWidth = r*0.024;
+    ctx.beginPath(); ctx.moveTo(c*r*0.76, sn*r*0.76); ctx.lineTo(c*r*0.62, sn*r*0.62); ctx.stroke();
+    ctx.font = `bold ${r*0.15}px ui-monospace,monospace`; ctx.fillText(String(v/100), c*r*0.48, sn*r*0.48);
+  }
+  ctx.fillStyle='#8fd0f0'; ctx.font=`bold ${r*0.12}px ui-monospace,monospace`;
+  ctx.fillText('EGT x100', 0, r*0.26);
+  ctx.fillStyle = egt > 730 ? '#ff7b7b' : '#dbe9f7'; ctx.font=`bold ${r*0.17}px ui-monospace,monospace`;
+  ctx.fillText(egt.toFixed(0), 0, r*0.58);
+  ctx.save(); ctx.rotate(ang(egt));
+  ctx.beginPath(); ctx.moveTo(-r*0.05,r*0.12); ctx.lineTo(0,-r*0.80); ctx.lineTo(r*0.05,r*0.12); ctx.closePath();
+  ctx.fillStyle='#f5f7fa'; ctx.fill(); ctx.restore();
+  ctx.beginPath(); ctx.arc(0,0,r*0.07,0,Math.PI*2); ctx.fillStyle='#46586f'; ctx.fill();
+  ctx.restore();
+}
+function gaugeVSI(cv, fpm){
+  const { ctx, S, R } = clearG(cv);
+  ctx.save(); ctx.translate(R,R);
+  const r = R*0.93;
+  face(ctx, r);
+
+  const MAX = 2000;
+  const ang = v => clamp(v/MAX,-1,1)*Math.PI*0.72;
+
+  ctx.strokeStyle='#cfe3f5'; ctx.fillStyle='#dbe9f7';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  for(let v=-MAX; v<=MAX; v+=100){
+    const big = v%500===0;
+    const a = ang(v) - Math.PI/2;
+    const c=Math.cos(a), s=Math.sin(a);
+    ctx.lineWidth = big? r*0.024 : r*0.011;
+    ctx.beginPath();
+    ctx.moveTo(c*r*0.88, s*r*0.88);
+    ctx.lineTo(c*(big? r*0.75 : r*0.82), s*(big? r*0.75 : r*0.82));
+    ctx.stroke();
+    if(big && v!==0){
+      ctx.font = `bold ${r*0.15}px ui-monospace,monospace`;
+      ctx.fillStyle='#dbe9f7';
+      ctx.fillText(String(Math.abs(v)/1000), c*r*0.60, s*r*0.60);
+    }
+  }
+  ctx.fillStyle='#8fd0f0'; ctx.font=`bold ${r*0.14}px ui-monospace,monospace`;
+  ctx.fillText('UP', 0, -r*0.72);
+  ctx.fillText('DN', 0,  r*0.72);
+
+  // aguja
+  ctx.save(); ctx.rotate(ang(fpm));
+  ctx.beginPath();
+  ctx.moveTo(r*0.72,0); ctx.lineTo(-r*0.11, r*0.030); ctx.lineTo(-r*0.11,-r*0.030);
+  ctx.closePath(); ctx.fillStyle='#f2f6fa'; ctx.fill();
+  ctx.restore();
+  ctx.beginPath(); ctx.arc(0,0,r*0.075,0,Math.PI*2);
+  ctx.fillStyle='#2c3a4c'; ctx.fill();
+  ctx.strokeStyle='#7f90ad'; ctx.lineWidth=r*0.016; ctx.stroke();
+  ctx.restore();
+}
+      return { ASI: gaugeASI, ATT: gaugeATT, ALT: gaugeALT, TC: gaugeTC, HDG: gaugeHDG, VSI: gaugeVSI, RPM: gaugeRPM, EGT: gaugeEGT };
+    })()
+  };
+  const GAUGE_LAYOUT = {
+    c172: [['ASI','IAS kt'],['ATT','ACTITUD'],['ALT','ALT ft'],['TC','G. VIRAJE'],['HDG','RUMBO'],['VSI','V/S fpm'],['RPM','RPM']],
+    pa28: [['ASI','IAS kt'],['ATT','ACTITUD'],['ALT','ALT ft'],['TC','G. VIRAJE'],['HDG','RUMBO'],['VSI','V/S fpm'],['RPM','RPM'],['MP','MP inHg']],
+    extra: [['ASI','IAS kt'],['ATT','ACTITUD'],['ALT','ALT ft'],['TC','G. VIRAJE'],['HDG','RUMBO'],['VSI','V/S fpm'],['RPM','RPM %'],['EGT','EGT °C']]
+  };
+  let gaugeKind = 'c172', gaugeCv = {}, gaugeLast = 0;
+  function buildGaugeRow(kind) {
+    const row = document.getElementById('gaugeRow');
+    if (!row) return;
+    gaugeKind = GAUGE_SETS[kind] ? kind : 'c172';
+    row.innerHTML = '';
+    gaugeCv = {};
+    GAUGE_LAYOUT[gaugeKind].forEach(([key, label]) => {
+      const d = document.createElement('div'); d.className = 'gg';
+      const c = document.createElement('canvas'); c.width = 140; c.height = 140;
+      const sp = document.createElement('span'); sp.textContent = label;
+      d.appendChild(c); d.appendChild(sp); row.appendChild(d);
+      gaugeCv[key] = c;
+    });
+  }
+  function drawGauges(t) {
+    const G = GAUGE_SETS[gaugeKind], st = t.state, fl = t.flight, pr = t.prop || {};
+    const clampG = (x, a, b) => x < a ? a : (x > b ? b : x);
+    const hM = st.y, rpm = pr.rpm || 0;
+    const slip = clampG((st.r * st.u / 9.81 - Math.tan(st.phi)) * 0.9, -1, 1);
+    G.ASI(gaugeCv.ASI, fl.iasKmh / 1.852);
+    G.ATT(gaugeCv.ATT, st.theta, st.phi);
+    G.ALT(gaugeCv.ALT, hM * 3.28084);
+    G.TC(gaugeCv.TC, st.p, slip);
+    G.HDG(gaugeCv.HDG, st.psi);
+    G.VSI(gaugeCv.VSI, fl.hdot * 196.85);
+    if (gaugeKind === 'extra') {
+      const N = rpm / 27; // el motor del simulador guarda N1 como fracción×2700
+      G.RPM(gaugeCv.RPM, N);
+      G.EGT(gaugeCv.EGT, 360 + 330 * Math.pow(clampG((N - 62) / 38, 0, 1.04), 1.2) - 0.0012 * hM * 3.28084 * 0.3048);
+    } else {
+      G.RPM(gaugeCv.RPM, rpm);
+      if (gaugeKind === 'pa28') { // MP aproximada: 29,92·e^(-h/8500) y gas lineal (misma fórmula que la app del Arrow)
+        const amb = 29.92 * Math.exp(-Math.max(0, hM) / 8500);
+        const th = clampG(pr.thr != null ? pr.thr : ac.controls.throttle, 0, 1);
+        G.MP(gaugeCv.MP, rpm < 100 ? amb : Math.max(amb * 0.22, amb * 0.4 + (amb - 1.3 - amb * 0.4) * th));
+      }
+    }
+  }
+
   const cockpitScene = world();
   const exteriorScene = world();
   let planeExt = makePlane('c172');
@@ -2176,6 +3465,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = AviationEn
     dash.add(g);
     needles[lb] = nd;
   });
+  Object.keys(needles).forEach(k => { if (needles[k] && needles[k].parent) needles[k].parent.visible = false; });
+  buildGaugeRow('c172');
   const hz = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-400, 0, -800), new THREE.Vector3(400, 0, -800)]),
     new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.25 })
@@ -2726,6 +4017,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = AviationEn
     exteriorScene.remove(planeExt.group);
     planeExt = makePlane(id);
     exteriorScene.add(planeExt.group);
+    buildGaugeRow(id);
     ['c172','pa28','extra'].forEach(t => $('tp-' + t).classList.toggle('on', t === id));
     syncSliders();
     badge();
@@ -2743,7 +4035,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = AviationEn
     cockpitCam.updateProjectionMatrix();
     hz.visible = fidelity === 'C';
     paniniOn = paniniOK && fidelity === 'C';
-    try { localStorage.setItem('avionPrefs', JSON.stringify({ fidelity, typeId, light: currentLight })); } catch (e) {}
+    try { localStorage.setItem('escuelaPrefs', JSON.stringify({ fidelity, typeId, light: currentLight })); } catch (e) {}
     badge();
   }
   $('fidA').onclick = () => setFid('A');
@@ -2920,7 +4212,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = AviationEn
       if (o.material && o.material.emissive) o.material.emissiveIntensity = 0.15 + P.cabin * 0.7;
     });
     try {
-      localStorage.setItem('avionPrefs', JSON.stringify({ fidelity, typeId, light: currentLight }));
+      localStorage.setItem('escuelaPrefs', JSON.stringify({ fidelity, typeId, light: currentLight }));
     } catch (e) {}
   }
   $('litDay').onclick = () => setLight('day');
@@ -2952,7 +4244,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = AviationEn
   function placeExt(t) {
     const p = xyz(t);
     planeExt.group.position.set(p.x, p.y, p.z);
-    planeExt.group.rotation.set(-t.state.theta, -t.state.psi + Math.PI / 2, t.state.phi, 'YXZ');
+    planeExt.group.rotation.set(t.state.phi, -t.state.psi + Math.PI / 2, t.state.theta, 'YZX'); // x=alabeo (eje morro), y=rumbo, z=cabeceo (eje del ala)
     planeExt.group.updateMatrixWorld(true);
     planeExt.gear.visible = !!ac.gearDown;
     const rpm = (t.prop && t.prop.rpm) || ac.controls.throttle * 2400;
@@ -2980,7 +4272,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = AviationEn
     // Cámara anclada al CUERPO del avión (misma orientación que usa la vista exterior): si el avión se invierte o pasa por la
     // vertical en un looping, la cabina se invierte con él. Antes se calculaba con rumbo+cabeceo y el "arriba" fijo del mundo,
     // y el alabeo se añadía aparte, por eso no coincidía con la exterior en vuelo invertido.
-    _ckE.set(-t.state.theta, -t.state.psi + Math.PI / 2, t.state.phi, 'YXZ');
+    _ckE.set(t.state.phi, -t.state.psi + Math.PI / 2, t.state.theta, 'YZX'); // idéntico al de planeExt
     _ckQ.setFromEuler(_ckE);
     _ckV.set(1.15, 0.62, 0).applyQuaternion(_ckQ); // ojo del piloto: delante y arriba, en ejes del avión
     cockpitCam.position.set(p.x + _ckV.x, p.y + _ckV.y, p.z + _ckV.z);
@@ -3203,6 +4495,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = AviationEn
     setN('nATT', t.state.phi * 57.3);
     setN('nHDG', t.state.psi * 57.3);
     setN('nTC', t.state.phi * 40);
+    if (now - gaugeLast > 45) { gaugeLast = now; try { drawGauges(t); } catch (e) { console.error('relojes:', e); } }
     const onlyExt = document.body.classList.contains('view-ext');
     const onlyCock = document.body.classList.contains('view-cockpit');
     if (!onlyExt) {
@@ -3222,7 +4515,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = AviationEn
     requestAnimationFrame(loop);
   }
   try {
-    const p = JSON.parse(localStorage.getItem('avionPrefs') || 'null');
+    const p = JSON.parse(localStorage.getItem('escuelaPrefs') || 'null');
     if (p) {
       if (p.typeId) loadType(p.typeId);
       if (p.fidelity) setFid(p.fidelity);
