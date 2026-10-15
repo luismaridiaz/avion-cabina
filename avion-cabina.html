@@ -139,6 +139,24 @@ input[type=range]{width:100%;height:4px;-webkit-appearance:none;background:var(-
   .stick-pad{bottom:calc(64px + env(safe-area-inset-bottom))}
   .mapStrip{flex-basis:calc(130px + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom)}
 }
+
+/* Cabina: relojes en una fila, sin la banda de datos numéricos, mapa pequeño */
+.pack{display:none}
+.six{--gs:40px;left:50%;right:auto;transform:translateX(-50%);bottom:34px;gap:5px;justify-content:center}
+.six .g{width:var(--gs);height:var(--gs);flex:0 0 var(--gs)}
+.six .g i{height:calc(var(--gs)*.54);margin:calc(var(--gs)*-.46) 0 0 -1px}
+.six .g b{font-size:calc(var(--gs)*.2)}
+.mapStrip{flex:0 0 clamp(56px,11dvh,96px)}
+@media(max-width:900px){
+  .six{--gs:calc((100vw - 8px)/6 - 4px);top:6px;bottom:auto;left:4px;right:4px;transform:none;gap:4px}
+  .warn{top:62px}
+  .rollarc{top:24%}
+  .mapStrip{flex-basis:calc(62px + env(safe-area-inset-bottom))}
+}
+@media(max-height:520px){
+  .six{--gs:34px}
+  .mapStrip{flex-basis:calc(42px + env(safe-area-inset-bottom))}
+}
 </style>
 </head>
 <body>
@@ -2952,7 +2970,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = AviationEn
   function placeExt(t) {
     const p = xyz(t);
     planeExt.group.position.set(p.x, p.y, p.z);
-    planeExt.group.rotation.set(-t.state.theta, -t.state.psi + Math.PI / 2, t.state.phi, 'YXZ');
+    planeExt.group.rotation.set(t.state.phi, -t.state.psi + Math.PI / 2, t.state.theta, 'YZX'); // x=alabeo (eje morro), y=rumbo, z=cabeceo (eje del ala)
     planeExt.group.updateMatrixWorld(true);
     planeExt.gear.visible = !!ac.gearDown;
     const rpm = (t.prop && t.prop.rpm) || ac.controls.throttle * 2400;
@@ -2980,7 +2998,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = AviationEn
     // Cámara anclada al CUERPO del avión (misma orientación que usa la vista exterior): si el avión se invierte o pasa por la
     // vertical en un looping, la cabina se invierte con él. Antes se calculaba con rumbo+cabeceo y el "arriba" fijo del mundo,
     // y el alabeo se añadía aparte, por eso no coincidía con la exterior en vuelo invertido.
-    _ckE.set(-t.state.theta, -t.state.psi + Math.PI / 2, t.state.phi, 'YXZ');
+    _ckE.set(t.state.phi, -t.state.psi + Math.PI / 2, t.state.theta, 'YZX'); // idéntico al de planeExt
     _ckQ.setFromEuler(_ckE);
     _ckV.set(1.15, 0.62, 0).applyQuaternion(_ckQ); // ojo del piloto: delante y arriba, en ejes del avión
     cockpitCam.position.set(p.x + _ckV.x, p.y + _ckV.y, p.z + _ckV.z);
