@@ -153,6 +153,8 @@ input[type=range]{width:100%;height:4px;-webkit-appearance:none;background:var(-
 .rollarc{top:calc(16% + 50px)}
 .ladder{top:calc(42% + 50px)}
 .mapStrip{position:absolute;right:8px;top:8px;left:auto;bottom:auto;width:clamp(92px,26vw,140px);height:clamp(92px,26vw,140px);flex:none;padding:0;border:2px solid var(--bd);border-radius:8px;overflow:hidden;z-index:5}
+.mapStrip{cursor:pointer;transition:width .25s,height .25s}
+.mapStrip.big{width:clamp(184px,52vw,280px);height:clamp(184px,52vw,280px)}
 .mapStrip .mlAttrib{font-size:7px;left:2px;top:2px;padding:0 3px;z-index:3}
 .pad-lb{position:absolute;right:calc(100% + 8px);top:50%;transform:translateY(-50%);font:700 9px var(--mono);letter-spacing:1px;color:rgba(190,220,245,.85);text-shadow:0 1px 2px #000;pointer-events:none;white-space:nowrap}
 .thr-pad{left:50%;transform:translateX(-50%);width:min(190px,calc(100% - 200px));height:40px;bottom:calc(14px + env(safe-area-inset-bottom));border-radius:20px}
@@ -175,6 +177,27 @@ input[type=range]{width:100%;height:4px;-webkit-appearance:none;background:var(-
   .rollarc{top:calc(16% + 36px)}
   .ladder{top:calc(42% + 36px)}
 }
+
+/* Mandos v4: volante, timón y frenos a la izquierda; palancas verticales (gas negra, mezcla roja, flaps) a la derecha */
+.thr-pad,.pedal{display:none !important}
+.stick-pad{left:10px;transform:none;right:auto;bottom:calc(106px + env(safe-area-inset-bottom))}
+.brk-grp{position:absolute;left:10px;bottom:calc(48px + env(safe-area-inset-bottom));display:flex;gap:6px;z-index:12;pointer-events:auto}
+.brk{touch-action:none;width:62px;height:50px;border-radius:10px;background:rgba(239,83,80,.28);border:2px solid #ef5350;color:#ffd0ce;font:700 9px/1.3 var(--mono);text-align:center;padding-top:9px;box-sizing:border-box;user-select:none}
+.brk.on{background:#ef5350;color:#fff}
+.rud-grp{position:absolute;left:10px;bottom:calc(8px + env(safe-area-inset-bottom));display:flex;gap:6px;z-index:12;pointer-events:auto}
+.rud{touch-action:none;width:62px;height:34px;border-radius:10px;background:#2b3345;border:2px solid #5b6b82;color:#cfe0f5;font:700 8px/30px var(--mono);text-align:center;box-sizing:border-box;user-select:none}
+.rud.on{border-color:#f0b429;color:#f0b429}
+.lev-grp{position:absolute;right:8px;bottom:calc(8px + env(safe-area-inset-bottom));display:flex;gap:7px;z-index:12;pointer-events:auto}
+.lev{position:relative;touch-action:none;width:38px;height:clamp(120px,34dvh,190px);margin-top:14px;border-radius:19px;background:linear-gradient(90deg,#10151d,#252e3d,#10151d);border:2px solid #5b6b82;box-sizing:border-box;user-select:none}
+.lev b{position:absolute;left:50%;bottom:calc(100% + 3px);transform:translateX(-50%);font:700 8px var(--mono);letter-spacing:.5px;color:rgba(190,220,245,.9);text-shadow:0 1px 2px #000;white-space:nowrap}
+.lev-k{position:absolute;left:1px;width:32px;height:32px;border-radius:50%;bottom:2px;pointer-events:none;box-shadow:0 2px 5px #000;box-sizing:border-box}
+.lev-k.blk{background:radial-gradient(circle at 35% 30%,#555,#0b0b0b);border:2px solid #888}
+.lev-k.red{background:radial-gradient(circle at 35% 30%,#ff7b78,#a00f0c);border:2px solid #ff9e9b}
+.lev.flp{margin-left:12px}
+.lev.hide{display:none}
+.lev .tk{position:absolute;right:calc(100% + 3px);transform:translateY(-50%);font:700 8px var(--mono);font-style:normal;color:#9fb3cf;text-shadow:0 1px 2px #000;pointer-events:none}
+.lev-k.blu{background:radial-gradient(circle at 35% 30%,#7ab8ff,#0d4aa8);border:2px solid #a9d0ff}
+.lev-k.wht{background:radial-gradient(circle at 35% 30%,#fff,#aeb7c4);border:2px solid #e6ebf2}
 </style>
 </head>
 <body>
@@ -232,10 +255,19 @@ input[type=range]{width:100%;height:4px;-webkit-appearance:none;background:var(-
       <!-- badge movido al panel -->
     </div>
     <div class="touch">
-      <div class="thr-pad" id="thrPad"><span class="pad-lb">GAS</span><div class="thr-knob" id="thrKnob"></div></div>
-      <div class="pedal pl" id="pedL"><div class="toe">FRENO</div><div class="trd">◀ TIMÓN</div></div>
-      <div class="pedal pr" id="pedR"><div class="toe">FRENO</div><div class="trd">TIMÓN ▶</div></div>
       <div class="stick-pad" id="stkPad"><div class="stick-knob" id="stkKnob"></div></div>
+      <div class="brk-grp" id="brkGrp">
+        <div class="brk" id="brkL">FRENO<br>IZQ</div><div class="brk" id="brkR">FRENO<br>DER</div>
+      </div>
+      <div class="rud-grp" id="rudGrp">
+        <div class="rud" id="rudL">◀ TIMÓN</div><div class="rud" id="rudR">TIMÓN ▶</div>
+      </div>
+      <div class="lev-grp" id="levGrp">
+        <div class="lev" id="levThr" data-k="throttle"><b>GAS</b><div class="lev-k blk"></div></div>
+        <div class="lev hide" id="levPrp" data-k="prop"><b>HÉLICE</b><div class="lev-k blu"></div></div>
+        <div class="lev" id="levMix" data-k="mixture"><b>MEZCLA</b><div class="lev-k red"></div></div>
+        <div class="lev flp" id="levFlp" data-k="flap"><b>FLAPS</b><i class="tk" style="top:calc(18px + (100% - 40px)*0/3)">UP</i><i class="tk" style="top:calc(18px + (100% - 40px)*1/3)">10</i><i class="tk" style="top:calc(18px + (100% - 40px)*2/3)">20</i><i class="tk" style="top:calc(18px + (100% - 40px)*3/3)">30</i><div class="lev-k wht"></div></div>
+      </div>
     </div>
   </div>
   <div class="right">
@@ -303,6 +335,8 @@ input[type=range]{width:100%;height:4px;-webkit-appearance:none;background:var(-
         <label>Alerón <input id="slAileron" type="range" min="-1" max="1" step="0.005" value="0"><span id="valAileron">0</span></label>
         <label>Timón <input id="slRudder" type="range" min="-1" max="1" step="0.005" value="0"><span id="valRudder">0</span></label>
         <label>Flaps <input id="slFlap" type="range" min="0" max="1" step="0.005" value="0.5"><span id="valFlap">50%</span></label>
+        <label>Mezcla <input id="slMixture" type="range" min="0" max="1" step="0.005" value="1"><span id="valMixture">100%</span></label>
+        <label>Hélice <input id="slProp" type="range" min="0" max="1" step="0.005" value="1"><span id="valProp">100%</span></label>
         <label>Freno <input id="slBrake" type="range" min="0" max="1" step="0.005" value="0"><span id="valBrake">0%</span></label>
       </div>
       <div class="row" style="align-items:center;gap:8px">
@@ -1081,6 +1115,7 @@ const AviationEngine = (() => {
   class PropulsionSystem {
     constructor(p = {}) {
       this.isJet = !!p.jet;
+      this.cs = !!p.cs;   // hélice de paso variable (velocidad constante): palanca de hélice (RPM)
       this.Pmax = (p.Pmax_kW ?? 160) * 1000;
       this.Tstatic = p.Tstatic ?? 3800;
       this.eta = p.eta ?? 0.78;
@@ -1093,8 +1128,10 @@ const AviationEngine = (() => {
       this.thr = 0;
       this.rpm = this.isJet ? this.idleFrac * 2700 : 700;
     }
-    step(cmd, V, rho, dt) {
+    step(cmd, V, rho, dt, mix, prp) {
       cmd = clamp(cmd, 0, 1);
+      mix = (mix == null) ? 1 : clamp(mix, 0, 1);
+      prp = (prp == null) ? 1 : clamp(prp, 0, 1);
       const rate = 1 / this.spool;
       this.thr += (cmd - this.thr) * Math.min(1, rate * dt);
       const dens = clamp(rho / 1.225, 0.35, 1.05);
@@ -1112,13 +1149,24 @@ const AviationEngine = (() => {
         if (this.fuel <= 0) return { thrust: 0, rpm: this.rpm, fuel: 0, thr: this.thr, power: 0, map: this.thr };
         return { thrust: T, rpm: this.rpm, fuel: this.fuel, thr: this.thr, power: T * Math.max(V, 0), map: this.thr };
       }
-      const rpmT = 650 + 2050 * this.thr;
+      // Mezcla (didáctica): la óptima se empobrece con la altitud; muy rica o muy pobre pierde potencia; en corte (<8 %) el motor se para.
+      const cut = mix < 0.08;
+      const mixOpt = clamp(0.45 + 0.55 * dens, 0.5, 1);
+      const dmx = mix - mixOpt;
+      const mf = cut ? 0 : (dmx >= 0 ? 1 - 0.5 * dmx : Math.max(0.15, 1 + 1.6 * dmx));
+      // Hélice de paso variable (didáctico): la palanca fija las RPM (2000-2700) en cuanto hay algo de gas; con RPM bajas
+      // se pierde empuje en el despegue (paso grueso) y se gana algo de rendimiento en crucero.
+      const govRpm = 2000 + 700 * prp;
+      const rpmT = cut ? 0 : (this.cs ? 650 + (govRpm - 650) * clamp(this.thr / 0.25, 0, 1) : 650 + 2050 * this.thr);
+      const csS = this.cs ? 0.85 + 0.15 * prp : 1;
+      const csE = this.cs ? 1 + 0.06 * (1 - prp) * clamp((V - 40) / 40, 0, 1) : 1;
       this.rpm += (rpmT - this.rpm) * Math.min(1, 2.2 * dt);
+      if (this.rpm < 1) this.rpm = 0;
       const n = clamp(this.rpm / 2700, 0.22, 1.02);
-      const P = this.Pmax * dens * Math.pow(n, 1.15) * this.thr;
-      const Tdyn = (P * this.eta) / Math.max(V, 16);
-      const T = Math.min(this.Tstatic * this.thr * dens, Tdyn);
-      const ff = this.sfc * P;
+      const P = cut ? 0 : this.Pmax * dens * Math.pow(n, 1.15) * this.thr * mf;
+      const Tdyn = (P * this.eta * csE) / Math.max(V, 16);
+      const T = cut ? 0 : Math.min(this.Tstatic * this.thr * dens * mf * csS, Tdyn);
+      const ff = this.sfc * P * (0.7 + 0.3 * mix);
       this.fuel = Math.max(0, this.fuel - ff * dt);
       if (this.fuel <= 0) return { thrust: 0, rpm: this.rpm, fuel: 0, thr: this.thr, power: 0, map: this.thr };
       return { thrust: T, rpm: this.rpm, fuel: this.fuel, thr: this.thr, power: P, map: this.thr };
@@ -1398,7 +1446,7 @@ const AviationEngine = (() => {
       const Fax = -D * ca * cb - Y * ca * sb + L * sa;
       const Fay = -D * sb + Y * cb;
       const Faz = -D * sa * cb - Y * sa * sb - L * ca;
-      const pr = this.prop.step(c.throttle, V, atm.rho, dt);
+      const pr = this.prop.step(c.throttle, V, atm.rho, dt, c.mixture, c.prop);
       const FxB = Fax + pr.thrust;
       const FyB = Fay;
       const FzB = Faz;
@@ -1633,7 +1681,7 @@ const AviationEngine = (() => {
     // crucera notablemente más rápido que un C172 con potencia similar).
     pa28: { typeId: 'pa28', typeName: 'Piper PA-28R-201 Arrow III (real)', vref: 37, vcruise: 62, mass: 1247, S: 15.79, b: 10.82, cBar: 1.459, Ixx: 1327, Iyy: 1849, Izz: 2750, gearH: 1.05, Vne: 183 * KT,
       aero: { clTab: scaleCL(1.124), CD0: 0.025 },
-      prop: { Tstatic: 4750, Pmax_kW: 149 } },
+      prop: { Tstatic: 4750, Pmax_kW: 149, cs: true } },
     // Aero L-39C Albatros real: peso de instrucción representativo ~4500 kg
     // (MTOW hasta 4700 kg con cargas externas, vacío ~3500 kg — no hay una
     // única "masa real" sin más contexto de carga). Ala 18.8 m² / 9.46 m de
@@ -3471,7 +3519,7 @@ function gaugeVSI(cv, fpm){
   const $ = id => document.getElementById(id);
   const sl = {
     throttle: $('slThrottle'), elevator: $('slElevator'), aileron: $('slAileron'),
-    rudder: $('slRudder'), flap: $('slFlap'), brake: $('slBrake')
+    rudder: $('slRudder'), flap: $('slFlap'), brake: $('slBrake'), mixture: $('slMixture'), prop: $('slProp')
   };
   let mode = 'manual';
   function setView(name) {
@@ -3582,19 +3630,14 @@ function gaugeVSI(cv, fpm){
     feel.cmd.rudder = +sl.rudder.value;
     ac.controls.flap = +sl.flap.value;
     ac.controls.brake = +sl.brake.value;
+    ac.controls.mixture = +sl.mixture.value;
+    ac.controls.prop = +sl.prop.value;
   }
   Object.values(sl).forEach(s => s.addEventListener('input', fromSliders));
   (function bindTouch() {
-    const thrPad = $('thrPad'), stkPad = $('stkPad');
-    if (!thrPad || !stkPad) return;
+    const stkPad = $('stkPad');
+    if (!stkPad) return;
     function clamp01(x){ return Math.max(0, Math.min(1, x)); }
-    function setThr(clientX) {
-      const r = thrPad.getBoundingClientRect();
-      const t = clamp01((clientX - r.left - 22) / Math.max(1, r.width - 44));
-      sl.throttle.value = t.toFixed(3);
-      $('thrKnob').style.left = (4 + t * (r.width - 44)) + 'px';
-      fromSliders(); vals();
-    }
     function setStk(clientX, clientY, end) {
       const r = stkPad.getBoundingClientRect();
       let nx = (clientX - r.left) / r.width * 2 - 1;
@@ -3609,11 +3652,7 @@ function gaugeVSI(cv, fpm){
       fromSliders(); vals();
     }
     function bindPad(el, move, end) {
-      const go = (e, fin) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (fin) end(e); else move(e);
-      };
+      const go = (e, fin) => { e.preventDefault(); e.stopPropagation(); if (fin) end(e); else move(e); };
       el.addEventListener('pointerdown', e => { el.setPointerCapture(e.pointerId); go(e, false); });
       el.addEventListener('pointermove', e => { if (e.buttons || e.pressure) go(e, false); });
       el.addEventListener('pointerup', e => go(e, true));
@@ -3622,35 +3661,48 @@ function gaugeVSI(cv, fpm){
       el.addEventListener('touchmove', e => { e.preventDefault(); move(e.touches[0]); }, { passive: false });
       el.addEventListener('touchend', e => { e.preventDefault(); end(e); }, { passive: false });
     }
-    bindPad(thrPad, ev => setThr(ev.clientX), () => {});
-    // Pedales del C172: parte baja = timón (izq./der.), parte alta (punta) = freno. Un freno solo da 50 %, los dos 100 %.
-    const ped = { L: { rud: false, brk: false }, R: { rud: false, brk: false } };
-    function pedApply() {
-      const rud = (ped.R.rud ? 1 : 0) - (ped.L.rud ? 1 : 0);
-      touchBrake = ((ped.L.brk ? 0.5 : 0) + (ped.R.brk ? 0.5 : 0));
-      sl.rudder.value = rud.toFixed(3);
+    bindPad(stkPad, ev => setStk(ev.clientX, ev.clientY, false), ev => setStk(0, 0, true));
+    // Frenos juntos a la izquierda: cada uno 50 %, los dos 100 % (el motor tiene un solo freno, no diferencial).
+    const brk = { L: false, R: false };
+    function brkApply() {
+      touchBrake = (brk.L ? 0.5 : 0) + (brk.R ? 0.5 : 0);
       if (touchBrake === 0) sl.brake.value = 0;
-      ['L', 'R'].forEach(k => {
-        const el = $('ped' + k);
-        el.classList.toggle('rud', ped[k].rud);
-        el.classList.toggle('brk', ped[k].brk);
-      });
+      $('brkL').classList.toggle('on', brk.L);
+      $('brkR').classList.toggle('on', brk.R);
       fromSliders(); vals();
     }
-    function bindPedal(k) {
-      const el = $('ped' + k);
-      if (!el) return;
-      const press = ev => {
-        const r = el.getBoundingClientRect();
-        const toe = (ev.clientY - r.top) < r.height * 0.38;
-        ped[k].brk = toe; ped[k].rud = !toe;
-        pedApply();
-      };
-      bindPad(el, press, () => { ped[k].brk = false; ped[k].rud = false; pedApply(); });
+    ['L', 'R'].forEach(k => bindPad($('brk' + k), () => { brk[k] = true; brkApply(); }, () => { brk[k] = false; brkApply(); }));
+    const rud = { L: false, R: false };
+    function rudApply() {
+      sl.rudder.value = ((rud.R ? 1 : 0) - (rud.L ? 1 : 0)).toFixed(3);
+      $('rudL').classList.toggle('on', rud.L); $('rudR').classList.toggle('on', rud.R);
+      fromSliders(); vals();
     }
-    bindPedal('L'); bindPedal('R');
-    bindPad(stkPad, ev => setStk(ev.clientX, ev.clientY, false), ev => setStk(0, 0, true));
+    ['L', 'R'].forEach(k => bindPad($('rud' + k), () => { rud[k] = true; rudApply(); }, () => { rud[k] = false; rudApply(); }));
+    // Palancas verticales: arriba = más.
+    document.querySelectorAll('.lev').forEach(el => {
+      const key = el.dataset.k;
+      bindPad(el, ev => {
+        const r = el.getBoundingClientRect();
+        let t = clamp01(1 - (ev.clientY - r.top - 18) / Math.max(1, r.height - 36));
+        if (key === 'flap') t = Math.round((1 - t) * 3) / 3;   // 4 posiciones: UP, 10, 20, 30 (UP arriba)
+        sl[key].value = t.toFixed(3);
+        fromSliders(); vals(); levSync();
+      }, () => {});
+    });
   })();
+  function levSync() {
+    document.querySelectorAll('.lev').forEach(el => {
+      const k = el.querySelector('.lev-k');
+      const h = el.clientHeight;
+      if (!h) return;
+      let v = ac.controls[el.dataset.k];
+      if (v == null) v = 1;
+      v = Math.max(0, Math.min(1, v));
+      if (el.dataset.k === 'flap') k.style.bottom = (2 + (1 - v) * (h - 40)) + 'px';
+      else k.style.bottom = (2 + v * (h - 40)) + 'px';
+    });
+  }
 
   function syncSliders() {
     sl.throttle.value = ac.controls.throttle;
@@ -3659,6 +3711,8 @@ function gaugeVSI(cv, fpm){
     sl.rudder.value = ac.controls.rudder;
     sl.flap.value = ac.controls.flap;
     sl.brake.value = ac.controls.brake;
+    if (ac.controls.mixture == null) ac.controls.mixture = +sl.mixture.value; else sl.mixture.value = ac.controls.mixture;
+    if (ac.controls.prop == null) ac.controls.prop = +sl.prop.value; else sl.prop.value = ac.controls.prop;
     vals();
   }
   function vals() {
@@ -3667,6 +3721,8 @@ function gaugeVSI(cv, fpm){
     $('valAileron').textContent = Math.round(ac.controls.aileron * 100);
     $('valRudder').textContent = Math.round(ac.controls.rudder * 100);
     $('valFlap').textContent = Math.round(ac.controls.flap * 100) + '%';
+    $('valMixture').textContent = Math.round((ac.controls.mixture == null ? 1 : ac.controls.mixture) * 100) + '%';
+    $('valProp').textContent = Math.round((ac.controls.prop == null ? 1 : ac.controls.prop) * 100) + '%';
     $('valBrake').textContent = Math.round(ac.controls.brake * 100) + '%';
   }
   function setMode() {
@@ -3739,7 +3795,7 @@ function gaugeVSI(cv, fpm){
       if (RealTerrain.active !== icao) return; // el usuario cambió de sitio antes de terminar
       $('terrStatus').textContent = 'Relieve real cargado: ' + entry.meta.name + ' (' + entry.meta.side_km + ' km, ' + Math.round(entry.meta.meters_per_pixel) + ' m/px). Cargando imagen y carreteras…';
       if (window.refreshTerrainVisual) window.refreshTerrainVisual();
-      if (mlMap) mlMap.jumpTo({ center: [entry.meta.field_lon, entry.meta.field_lat], zoom: 11 });
+      if (mlMap) mlMap.jumpTo({ center: [entry.meta.field_lon, entry.meta.field_lat], zoom: 12 });
       // Satélite y carreteras son una mejora opcional aparte: si no existen
       // (aún no has corrido fetch_terrain_v2.py) o fallan, el relieve por
       // altura ya cargado sigue funcionando exactamente igual, sin romperse.
@@ -3914,7 +3970,7 @@ function gaugeVSI(cv, fpm){
       const rw = RegionTerrain.getRunway(icao);
       regionBase = icao;
       addRegionRunways();
-      try { if (mlMap) mlMap.jumpTo({ center: [REGION_AIRPORTS[icao].lon, REGION_AIRPORTS[icao].lat], zoom: 11 }); } catch (e) {}
+      try { if (mlMap) mlMap.jumpTo({ center: [REGION_AIRPORTS[icao].lon, REGION_AIRPORTS[icao].lat], zoom: 12 }); } catch (e) {}
       return loadRegionAround(rw.aimX, rw.aimZ);
     }).then(() => {
       _regionUpdateBusy = false;
@@ -3979,6 +4035,8 @@ function gaugeVSI(cv, fpm){
     planeExt = makePlane(id);
     exteriorScene.add(planeExt.group);
     buildGaugeRow(id);
+    $('levMix').classList.toggle('hide', !!ac.prop.isJet);                 // el reactor no tiene mezcla
+    $('levPrp').classList.toggle('hide', !ac.prop.cs);                      // solo hélice de paso variable (Arrow)
     ['c172','pa28','extra'].forEach(t => $('tp-' + t).classList.toggle('on', t === id));
     syncSliders();
     badge();
@@ -4181,6 +4239,14 @@ function gaugeVSI(cv, fpm){
   $('litNight').onclick = () => setLight('night');
 
   let touchBrake = 0;
+  addEventListener('keydown', e => {
+    if (e.repeat || mode !== 'manual') return;
+    const k = e.key.toLowerCase();
+    if (k !== 'f' && k !== 'v') return;
+    const cur = Math.round(+sl.flap.value * 3);
+    sl.flap.value = (Math.max(0, Math.min(3, cur + (k === 'f' ? 1 : -1))) / 3).toFixed(3);
+    fromSliders(); vals();
+  });
   function keysToSliders() {
     if (keys.w || keys.W) sl.throttle.value = Math.min(1, +sl.throttle.value + 0.008);
     if (keys.s || keys.S) sl.throttle.value = Math.max(0, +sl.throttle.value - 0.008);
@@ -4190,8 +4256,6 @@ function gaugeVSI(cv, fpm){
     if (keys.ArrowRight) sl.aileron.value = Math.min(1, +sl.aileron.value + 0.016);
     if (keys.a || keys.A) sl.rudder.value = Math.max(-1, +sl.rudder.value - 0.016);
     if (keys.d || keys.D) sl.rudder.value = Math.min(1, +sl.rudder.value + 0.016);
-    if (keys.f || keys.F) sl.flap.value = Math.min(1, +sl.flap.value + 0.01);
-    if (keys.v || keys.V) sl.flap.value = Math.max(0, +sl.flap.value - 0.01);
     if (touchBrake > 0) sl.brake.value = touchBrake;
     else if (keys.b || keys.B) sl.brake.value = Math.min(1, +sl.brake.value + 0.02);
     else sl.brake.value = Math.max(0, +sl.brake.value - 0.008);
@@ -4374,7 +4438,7 @@ function gaugeVSI(cv, fpm){
     mlMap = new maplibregl.Map({
       container: 'maplibreMap',
       style: 'https://tiles.openfreemap.org/styles/bright',
-      center: [-3.7, 43], zoom: 9.5, attributionControl: false
+      center: [-3.7, 43], zoom: 9.5, attributionControl: false, interactive: false, fadeDuration: 0, maxTileCacheSize: 200, pixelRatio: Math.min(3, Math.max(2, window.devicePixelRatio || 1))
     });
     mlMap.on('load', () => {
       // El marcador se crea SIEMPRE primero — si el relieve/hillshade de IGN
@@ -4397,6 +4461,15 @@ function gaugeVSI(cv, fpm){
       }
     });
   }
+  (function () {
+    const ms = document.querySelector('.mapStrip');
+    if (!ms) return;
+    ms.addEventListener('click', () => {
+      ms.classList.toggle('big');
+      const rs = () => { try { if (mlMap) mlMap.resize(); } catch (e) {} };
+      setTimeout(rs, 80); setTimeout(rs, 300);
+    });
+  })();
   function mlUpdateAircraft(t) {
     if (!mlReady || !mlMarker) return;
     let lat, lon, hdgDeg;
@@ -4458,7 +4531,7 @@ function gaugeVSI(cv, fpm){
     setN('nATT', t.state.phi * 57.3);
     setN('nHDG', t.state.psi * 57.3);
     setN('nTC', t.state.phi * 40);
-    if (now - gaugeLast > 45) { gaugeLast = now; try { drawGauges(t); const kn = $('thrKnob'), pd = $('thrPad'); if (kn && pd && pd.offsetWidth) kn.style.left = (4 + Math.max(0, Math.min(1, ac.controls.throttle)) * (pd.offsetWidth - 44)) + 'px'; } catch (err) { console.error('relojes:', err); } }
+    if (now - gaugeLast > 45) { gaugeLast = now; try { drawGauges(t); levSync(); } catch (err) { console.error('relojes:', err); } }
     const onlyExt = document.body.classList.contains('view-ext');
     const onlyCock = document.body.classList.contains('view-cockpit');
     if (!onlyExt) {
