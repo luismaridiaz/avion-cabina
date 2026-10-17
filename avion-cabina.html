@@ -187,15 +187,15 @@ input[type=range]{width:100%;height:4px;-webkit-appearance:none;background:var(-
 .rud-grp{position:absolute;left:10px;bottom:calc(8px + env(safe-area-inset-bottom));display:flex;gap:6px;z-index:12;pointer-events:auto}
 .rud{touch-action:none;width:62px;height:34px;border-radius:10px;background:#2b3345;border:2px solid #5b6b82;color:#cfe0f5;font:700 8px/30px var(--mono);text-align:center;box-sizing:border-box;user-select:none}
 .rud.on{border-color:#f0b429;color:#f0b429}
-.lev-grp{position:absolute;right:8px;bottom:calc(8px + env(safe-area-inset-bottom));display:flex;gap:7px;z-index:12;pointer-events:auto}
-.lev{position:relative;touch-action:none;width:38px;height:clamp(120px,34dvh,190px);margin-top:14px;border-radius:19px;background:linear-gradient(90deg,#10151d,#252e3d,#10151d);border:2px solid #5b6b82;box-sizing:border-box;user-select:none}
-.lev b{position:absolute;left:50%;bottom:calc(100% + 3px);transform:translateX(-50%);font:700 8px var(--mono);letter-spacing:.5px;color:rgba(190,220,245,.9);text-shadow:0 1px 2px #000;white-space:nowrap}
-.lev-k{position:absolute;left:1px;width:32px;height:32px;border-radius:50%;bottom:2px;pointer-events:none;box-shadow:0 2px 5px #000;box-sizing:border-box}
+.lev-grp{position:absolute;right:8px;bottom:calc(8px + env(safe-area-inset-bottom));display:flex;gap:5px;z-index:12;pointer-events:auto}
+.lev{position:relative;touch-action:none;width:26px;height:clamp(90px,26dvh,140px);margin-top:12px;border-radius:13px;background:linear-gradient(90deg,#10151d,#252e3d,#10151d);border:2px solid #5b6b82;box-sizing:border-box;user-select:none}
+.lev b{position:absolute;left:50%;bottom:calc(100% + 3px);transform:translateX(-50%);font:700 7px var(--mono);letter-spacing:0;color:rgba(190,220,245,.9);text-shadow:0 1px 2px #000;white-space:nowrap}
+.lev-k{position:absolute;left:1px;width:20px;height:20px;border-radius:50%;bottom:2px;pointer-events:none;box-shadow:0 2px 5px #000;box-sizing:border-box}
 .lev-k.blk{background:radial-gradient(circle at 35% 30%,#555,#0b0b0b);border:2px solid #888}
 .lev-k.red{background:radial-gradient(circle at 35% 30%,#ff7b78,#a00f0c);border:2px solid #ff9e9b}
-.lev.flp{margin-left:12px}
+.lev.flp{margin-left:10px}
 .lev.hide{display:none}
-.lev .tk{position:absolute;right:calc(100% + 3px);transform:translateY(-50%);font:700 8px var(--mono);font-style:normal;color:#9fb3cf;text-shadow:0 1px 2px #000;pointer-events:none}
+.lev .tk{position:absolute;right:calc(100% + 2px);transform:translateY(-50%);font:700 7px var(--mono);font-style:normal;color:#9fb3cf;text-shadow:0 1px 2px #000;pointer-events:none}
 .lev-k.blu{background:radial-gradient(circle at 35% 30%,#7ab8ff,#0d4aa8);border:2px solid #a9d0ff}
 .lev-k.wht{background:radial-gradient(circle at 35% 30%,#fff,#aeb7c4);border:2px solid #e6ebf2}
 </style>
@@ -266,7 +266,7 @@ input[type=range]{width:100%;height:4px;-webkit-appearance:none;background:var(-
         <div class="lev" id="levThr" data-k="throttle"><b>GAS</b><div class="lev-k blk"></div></div>
         <div class="lev hide" id="levPrp" data-k="prop"><b>HÉLICE</b><div class="lev-k blu"></div></div>
         <div class="lev" id="levMix" data-k="mixture"><b>MEZCLA</b><div class="lev-k red"></div></div>
-        <div class="lev flp" id="levFlp" data-k="flap"><b>FLAPS</b><i class="tk" style="top:calc(18px + (100% - 40px)*0/3)">UP</i><i class="tk" style="top:calc(18px + (100% - 40px)*1/3)">10</i><i class="tk" style="top:calc(18px + (100% - 40px)*2/3)">20</i><i class="tk" style="top:calc(18px + (100% - 40px)*3/3)">30</i><div class="lev-k wht"></div></div>
+        <div class="lev flp" id="levFlp" data-k="flap"><b>FLAPS</b><i class="tk" style="top:calc(12px + (100% - 26px)*0/3)">UP</i><i class="tk" style="top:calc(12px + (100% - 26px)*1/3)">10</i><i class="tk" style="top:calc(12px + (100% - 26px)*2/3)">20</i><i class="tk" style="top:calc(12px + (100% - 26px)*3/3)">30</i><div class="lev-k wht"></div></div>
       </div>
     </div>
   </div>
@@ -3684,7 +3684,7 @@ function gaugeVSI(cv, fpm){
       const key = el.dataset.k;
       bindPad(el, ev => {
         const r = el.getBoundingClientRect();
-        let t = clamp01(1 - (ev.clientY - r.top - 18) / Math.max(1, r.height - 36));
+        let t = clamp01(1 - (ev.clientY - r.top - 12) / Math.max(1, r.height - 24));
         if (key === 'flap') t = Math.round((1 - t) * 3) / 3;   // 4 posiciones: UP, 10, 20, 30 (UP arriba)
         sl[key].value = t.toFixed(3);
         fromSliders(); vals(); levSync();
@@ -3699,8 +3699,8 @@ function gaugeVSI(cv, fpm){
       let v = ac.controls[el.dataset.k];
       if (v == null) v = 1;
       v = Math.max(0, Math.min(1, v));
-      if (el.dataset.k === 'flap') k.style.bottom = (2 + (1 - v) * (h - 40)) + 'px';
-      else k.style.bottom = (2 + v * (h - 40)) + 'px';
+      if (el.dataset.k === 'flap') k.style.bottom = (2 + (1 - v) * (h - 26)) + 'px';
+      else k.style.bottom = (2 + v * (h - 26)) + 'px';
     });
   }
 
