@@ -140,27 +140,31 @@ input[type=range]{width:100%;height:4px;-webkit-appearance:none;background:var(-
   .mapStrip{flex-basis:calc(130px + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom)}
 }
 
-/* Cabina: relojes realistas a todo el ancho, sin banda de datos, mapa cuadrado pequeño, mandos centrados */
+/* Cabina: relojes realistas a todo el ancho, sin banda de datos, mapa cuadrado pequeño, mandos centrados (móvil y ordenador) */
 .pack,#sixPack{display:none}
-.gauges{position:absolute;left:50%;transform:translateX(-50%);bottom:34px;display:flex;gap:6px;z-index:7;pointer-events:none}
-.gauges .gg{width:64px;text-align:center}
-.gauges canvas{width:64px;height:64px;border-radius:50%;display:block;box-shadow:0 1px 4px rgba(0,0,0,.6)}
+.touch{display:block}
+.maplibregl-ctrl-attrib,.maplibregl-ctrl-bottom-right,.maplibregl-ctrl-bottom-left{display:none !important}
+.gauges{position:absolute;top:6px;left:4px;right:4px;display:flex;gap:4px;z-index:7;pointer-events:none;justify-content:center}
+.gauges .gg{width:min(calc((100% - 8px)/6), 78px);text-align:center}
+.gauges canvas{width:100%;height:auto;aspect-ratio:1;border-radius:50%;display:block;box-shadow:0 1px 4px rgba(0,0,0,.6)}
 .gauges span{display:block;font:700 7px var(--mono);color:#9fb3cf;margin-top:1px;text-shadow:0 1px 2px #000;white-space:nowrap}
 .hud.night .gauges canvas{box-shadow:0 0 8px rgba(255,160,60,.4)}
-.mapStrip{position:fixed;left:12px;bottom:40px;width:96px;height:96px;flex:none;border:2px solid var(--bd);border-radius:8px;overflow:hidden;z-index:30;padding:0}
-.mapStrip .mlAttrib{font-size:6px;left:2px;top:2px;padding:0 3px}
-.thr-pad{left:50%;transform:translateX(-50%);width:min(210px,54vw);height:46px;bottom:calc(10px + env(safe-area-inset-bottom));border-radius:23px}
+.warn{top:100px}
+.rollarc{top:calc(16% + 50px)}
+.ladder{top:calc(42% + 50px)}
+.mapStrip{position:fixed;left:12px;bottom:40px;width:120px;height:120px;flex:none;border:2px solid var(--bd);border-radius:8px;overflow:hidden;z-index:30;padding:0}
+.mapStrip .mlAttrib{font-size:7px;left:2px;top:2px;padding:0 3px;z-index:3}
+.thr-pad{left:50%;transform:translateX(-50%);width:min(190px,50vw);height:46px;bottom:calc(10px + env(safe-area-inset-bottom));border-radius:23px}
 .thr-knob{top:4px;bottom:auto;left:4px;width:38px;height:38px}
 .stick-pad{left:50%;transform:translateX(-50%);right:auto;bottom:calc(64px + env(safe-area-inset-bottom));width:min(120px,28dvh);height:min(120px,28dvh)}
 @media(max-width:900px){
-  .gauges{top:6px;bottom:auto;left:4px;right:4px;transform:none;gap:3px;justify-content:center}
-  .gauges .gg{width:min(calc((100vw - 8px)/6 - 3px), 17dvh)}
-  .gauges canvas{width:100%;height:auto;aspect-ratio:1}
+  .gauges{gap:3px}
+  .gauges .gg{width:min(calc((100% - 8px)/6), 17dvh)}
   .gauges span{font-size:7px}
   .warn{top:calc(var(--gh,70px) + 24px)}
   .rollarc{top:calc(16% + 36px)}
   .ladder{top:calc(42% + 36px)}
-  .mapStrip{left:auto;right:6px;bottom:calc(8px + env(safe-area-inset-bottom));width:clamp(60px,19vw,80px);height:clamp(60px,19vw,80px)}
+  .mapStrip{left:auto;right:6px;bottom:calc(8px + env(safe-area-inset-bottom));width:clamp(72px,24vw,96px);height:clamp(72px,24vw,96px)}
 }
 </style>
 </head>
@@ -4330,7 +4334,7 @@ function gaugeVSI(cv, fpm){
     mlMap = new maplibregl.Map({
       container: 'maplibreMap',
       style: 'https://tiles.openfreemap.org/styles/bright',
-      center: [-3.7, 43], zoom: 6.3, attributionControl: true
+      center: [-3.7, 43], zoom: 9.5, attributionControl: false
     });
     mlMap.on('load', () => {
       // El marcador se crea SIEMPRE primero — si el relieve/hillshade de IGN
@@ -4414,7 +4418,7 @@ function gaugeVSI(cv, fpm){
     setN('nATT', t.state.phi * 57.3);
     setN('nHDG', t.state.psi * 57.3);
     setN('nTC', t.state.phi * 40);
-    if (now - gaugeLast > 45) { gaugeLast = now; try { drawGauges(t); } catch (err) { console.error('relojes:', err); } }
+    if (now - gaugeLast > 45) { gaugeLast = now; try { drawGauges(t); const kn = $('thrKnob'), pd = $('thrPad'); if (kn && pd && pd.offsetWidth) kn.style.left = (4 + Math.max(0, Math.min(1, ac.controls.throttle)) * (pd.offsetWidth - 44)) + 'px'; } catch (err) { console.error('relojes:', err); } }
     const onlyExt = document.body.classList.contains('view-ext');
     const onlyCock = document.body.classList.contains('view-cockpit');
     if (!onlyExt) {
